@@ -8,6 +8,8 @@ from pathlib import Path
 
 from flask_socketio import SocketIO, emit, join_room, leave_room
 
+from ..config import get_path
+
 logger = logging.getLogger(__name__)
 
 # Track active streaming rooms
@@ -56,7 +58,7 @@ def _ensure_log_thread(socketio: SocketIO) -> None:
 
 def _tail_logs(socketio: SocketIO) -> None:
     """Tail the log file and emit new lines via SocketIO."""
-    log_file = Path("/app/logs/claudephone.log")
+    log_file = get_path("log_file")
 
     if not log_file.exists():
         return

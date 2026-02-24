@@ -47,7 +47,10 @@ class CallbackQueue:
 
     MAX_SIZE = 50
 
-    def __init__(self, persist_path: str = "/app/logs/callback_queue.json"):
+    def __init__(self, persist_path: str = None):
+        if persist_path is None:
+            from ..config import get_path
+            persist_path = str(get_path("callback_queue"))
         self.persist_path = persist_path
         self._lock = threading.Lock()
         self._items: List[CallbackItem] = []

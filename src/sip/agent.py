@@ -10,7 +10,7 @@ from typing import Dict, Optional
 
 import pjsua2 as pj
 
-from ..config import get_config
+from ..config import get_config, get_path
 from .account import SIPAccount
 from .call import VoiceCall
 
@@ -64,6 +64,7 @@ class SIPVoiceAgent:
 
         try:
             self._init_pjsip()
+            self._warmup_rtp()
             self._register()
             self._start_background_workers()
             self._event_loop()
@@ -83,7 +84,7 @@ class SIPVoiceAgent:
         ep_cfg = pj.EpConfig()
         ep_cfg.logConfig.level = 5
         ep_cfg.logConfig.consoleLevel = 3
-        ep_cfg.logConfig.filename = "/app/logs/pjsip.log"
+        ep_cfg.logConfig.filename = str(get_path("pjsip_log"))
 
         # Media config: 8kHz mono for telephony
         ep_cfg.medConfig.clockRate = 8000
@@ -93,6 +94,12 @@ class SIPVoiceAgent:
         ep_cfg.medConfig.ecOptions = 0
         ep_cfg.medConfig.ecTailLen = 0
         ep_cfg.medConfig.noVad = True
+        ep_cfg.medConfig.ptime = 20        # 20ms frames, match PCMU ptime
+        ep_cfg.medConfig.maxMediaPorts = 32
+        ep_cfg.medConfig.jbInit = 160      # Initial jitter buffer prefetch: 160ms
+        ep_cfg.medConfig.jbMinPre = 60     # Min prefetch: 60ms
+        ep_cfg.medConfig.jbMaxPre = 400    # Max prefetch: 400ms
+        ep_cfg.medConfig.jbMax = 1000      # Max jitter buffer: 1000ms
 
         self.ep.libInit(ep_cfg)
 
@@ -126,6 +133,39 @@ class SIPVoiceAgent:
 
         logger.info("PJSIP initialized (port=%d, transport=%s, null_audio=True)", sip["local_port"], sip["transport"])
 
+    def _warmup_rtp(self) -> None:
+        """Pre-bind a UDP socket on the RTP port to warm up Docker's NAT.
+
+        PJSIP's first call often has RX=0 because the UDP socket is brand new
+        and Docker's port-forwarding hasn't fully established the NAT mapping.
+        By binding a socket on port 4000 *before* the first call, sending
+        a packet out (to trigger conntrack), and then closing it, we ensure
+        the NAT table has an entry ready for incoming RTP.
+        """
+        import socket as _socket
+        rtp_port = 4000
+        try:
+            # Bind to the RTP port briefly to create the NAT mapping
+            sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+            sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            sock.settimeout(0.5)
+            sock.bind(('0.0.0.0', rtp_port))
+            # Send outbound packet to trigger conntrack entry in Docker
+            public_ip = self.config["sip"].get("public_ip", "127.0.0.1")
+            sock.sendto(b'\x80\x00' + b'\x00' * 10, (public_ip, rtp_port))
+            # Brief listen to complete the round-trip
+            try:
+                sock.recvfrom(64)
+            except _socket.timeout:
+                pass
+            sock.close()
+            logger.info("RTP warmup: port %d pre-bound and NAT entry created", rtp_port)
+        except OSError as e:
+            # Port may already be in use (fine — PJSIP will bind it later)
+            logger.info("RTP warmup: port %d already bound (%s) — OK", rtp_port, e)
+        except Exception as e:
+            logger.warning("RTP warmup failed (non-critical): %s", e)
+
     def _register(self) -> None:
         """Register SIP account with the server."""
         sip = self.config["sip"]
@@ -156,20 +196,28 @@ class SIPVoiceAgent:
         if public_ip:
             contact_uri = f"sip:{sip['username']}@{public_ip}:{public_port};ob"
             acc_cfg.sipConfig.contactUri = contact_uri
-            acc_cfg.natConfig.contactRewriteUse = 0
+            acc_cfg.natConfig.contactRewriteUse = 0  # Don't rewrite, we set it explicitly
             logger.info("Using explicit contact URI: %s", contact_uri)
 
         # RTP port range + public IP for media (critical for Docker NAT)
         # Without publicAddress on media transport, SDP will contain the container's
         # internal IP (172.x.x.x) and FreePBX won't be able to send RTP back to us
+        # Fixed RTP port — no range, always use 4000.
+        # With portRange>0, PJSIP increments the port for each new call,
+        # but the SDP publicAddress doesn't track the actual bound port,
+        # causing port mismatches with Docker port forwarding.
         acc_cfg.mediaConfig.transportConfig.port = 4000
-        acc_cfg.mediaConfig.transportConfig.portRange = 20
+        acc_cfg.mediaConfig.transportConfig.portRange = 0
         if public_ip:
             acc_cfg.mediaConfig.transportConfig.publicAddress = public_ip
-            logger.info("RTP media public address: %s (ports 4000-4019)", public_ip)
+            logger.info("RTP media public address: %s (fixed port 4000)", public_ip)
 
-        # UDP keep-alive for NAT
+        # NAT settings — keep it simple for LAN setups
         acc_cfg.natConfig.udpKaIntervalSec = 15
+        # No ICE — both FreePBX and ClaudePhone are on the same LAN,
+        # ICE/STUN would resolve to the external IP which breaks port forwarding
+        acc_cfg.natConfig.iceEnabled = False
+        acc_cfg.natConfig.sdpNatRewriteUse = 0  # Don't rewrite SDP, use our explicit public_ip
 
         # Create account
         self.account = SIPAccount(self)
@@ -243,7 +291,7 @@ class SIPVoiceAgent:
                 # Pre-generate TTS
                 audio_file = None
                 if self.tts:
-                    audio_dir = Path("/app/audio/tmp")
+                    audio_dir = get_path("audio_tmp")
                     audio_dir.mkdir(parents=True, exist_ok=True)
                     out = str(audio_dir / f"callback_{int(time.time()*1000)}.wav")
                     audio_file = self.tts.speak(response, out)
@@ -373,6 +421,13 @@ class SIPVoiceAgent:
         if self.ep:
             try:
                 self.ep.libDestroy()
+            except Exception:
+                pass
+
+        # Close database connection for this thread
+        if hasattr(self, '_db') and self._db:
+            try:
+                self._db.close()
             except Exception:
                 pass
 

@@ -10,7 +10,9 @@ logger = logging.getLogger(__name__)
 
 config_bp = Blueprint("config", __name__)
 
-ENV_FILE = "/app/.env"
+from ..config import get_path
+
+ENV_FILE = str(get_path("env_file"))
 
 # Settings that can be hot-reloaded (no restart needed)
 HOT_RELOAD_KEYS = {

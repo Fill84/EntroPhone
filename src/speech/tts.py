@@ -14,10 +14,12 @@ import threading
 from pathlib import Path
 from typing import Dict, Optional
 
+from ..config import get_path
+
 logger = logging.getLogger(__name__)
 
 # Standalone Piper binary path (downloaded in Dockerfile)
-PIPER_BIN = "/app/piper/piper"
+PIPER_BIN = str(get_path("piper_bin"))
 
 # Common phrases pre-generated at startup (keyed by phrase_key)
 COMMON_PHRASES = {
@@ -62,8 +64,8 @@ class TTSEngine:
 
     def __init__(self, config: dict):
         self.config = config
-        self.models_dir = Path("/app/models/piper")
-        self.cache_dir = Path("/app/audio/cache")
+        self.models_dir = get_path("piper_models")
+        self.cache_dir = get_path("audio_cache")
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._lock = threading.Lock()  # Serialize Piper calls

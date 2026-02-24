@@ -5,6 +5,7 @@ then initializes all components and starts the SIP agent.
 """
 
 import logging
+import logging.handlers
 import os
 import sys
 import time
@@ -24,7 +25,14 @@ class _ConsoleFilter(logging.Filter):
         return record.levelno >= logging.WARNING
 
 
-_file_handler = logging.FileHandler("/app/logs/claudephone.log", encoding="utf-8")
+# RotatingFileHandler: max 10MB per file, keep 5 backups (50MB total)
+# Note: can't use get_path() here yet (module-level), but APP_ROOT is available
+_log_dir = Path(os.environ.get("APP_ROOT", "/app")) / "logs"
+_log_dir.mkdir(parents=True, exist_ok=True)
+_file_handler = logging.handlers.RotatingFileHandler(
+    str(_log_dir / "claudephone.log"), encoding="utf-8",
+    maxBytes=10 * 1024 * 1024, backupCount=5,
+)
 _file_handler.setLevel(logging.INFO)
 _file_handler.setFormatter(logging.Formatter(_log_format))
 
@@ -44,7 +52,8 @@ def main():
     logger.info("=" * 60)
 
     # Step 1: Load .env for backward compatibility
-    env_path = Path("/app/.env")
+    from .config import get_path
+    env_path = get_path("env_file")
     if env_path.exists():
         load_dotenv(str(env_path))
     else:
@@ -263,7 +272,8 @@ def _init_callback_queue():
     try:
         from .callback.queue import CallbackQueue
 
-        cq = CallbackQueue(persist_path="/app/logs/callback_queue.json")
+        from .config import get_path
+        cq = CallbackQueue(persist_path=str(get_path("callback_queue")))
         logger.info("Callback queue initialized (%d pending)", cq.size())
         return cq
     except Exception as e:

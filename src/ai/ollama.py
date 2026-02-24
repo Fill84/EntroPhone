@@ -67,18 +67,22 @@ class OllamaClient:
             model_names = [m.get("name", "") for m in models]
             logger.info("Available Ollama models: %s", model_names)
 
-            # Preload model with a minimal request
+            # Preload model into memory without generating a response.
+            # Large models (12B+) can take >90s to load from disk on first use.
             logger.info("Preloading model: %s", self.model)
             r = requests.post(
-                f"{self.base_url}/api/chat",
+                f"{self.base_url}/api/generate",
                 json={
                     "model": self.model,
-                    "messages": [{"role": "user", "content": "Hi"}],
-                    "stream": False,
-                    "options": {"num_predict": 5},
+                    "prompt": "",
+                    "keep_alive": "10m",
                 },
-                timeout=90,
+                timeout=300,
             )
+            if r.status_code == 200:
+                logger.info("Model %s preloaded successfully", self.model)
+            else:
+                logger.warning("Model preload returned status %d", r.status_code)
             return r.status_code == 200
 
         except requests.ConnectionError:
@@ -112,6 +116,7 @@ class OllamaClient:
             },
         }
 
+        buffer = ""
         try:
             response = requests.post(
                 url,
@@ -123,8 +128,6 @@ class OllamaClient:
             if response.status_code != 200:
                 logger.error("Ollama stream failed (status=%d)", response.status_code)
                 return
-
-            buffer = ""
             for line in response.iter_lines():
                 if not line:
                     continue
@@ -174,7 +177,11 @@ class OllamaClient:
         messages: List[dict],
         timeout: Optional[float] = None,
     ) -> Optional[str]:
-        """Synchronous (non-streaming) chat. Used for callbacks."""
+        """Synchronous (non-streaming) chat. Used for callbacks.
+
+        Default timeout is 2x the normal streaming timeout since callbacks
+        are asynchronous and the caller isn't waiting on the line.
+        """
         url = f"{self.base_url}/api/chat"
         payload = {
             "model": self.model,
@@ -188,7 +195,7 @@ class OllamaClient:
 
         try:
             response = requests.post(
-                url, json=payload, timeout=timeout or self.timeout
+                url, json=payload, timeout=timeout or (self.timeout * 4)
             )
             if response.status_code == 200:
                 content = response.json().get("message", {}).get("content", "")

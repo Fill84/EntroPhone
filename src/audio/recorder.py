@@ -16,6 +16,7 @@ from typing import Optional
 import numpy as np
 import pjsua2 as pj
 
+from ..config import get_path
 from .vad import SileroVAD
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,7 @@ class VADRecorder:
             return None
 
         # Concatenate speech chunks into one file
-        output_file = f"/app/audio/tmp/utterance_{int(time.time()*1000)}.wav"
+        output_file = str(get_path("audio_tmp") / f"utterance_{int(time.time()*1000)}.wav")
         self._concatenate_chunks(speech_chunks, output_file)
 
         # Cleanup chunk files
@@ -158,7 +159,7 @@ class VADRecorder:
             if aud_med is None:
                 return None
 
-            chunk_file = f"/app/audio/tmp/chunk_{int(time.time()*1000000)}.wav"
+            chunk_file = str(get_path("audio_tmp") / f"chunk_{int(time.time()*1000000)}.wav")
             recorder = pj.AudioMediaRecorder()
             recorder.createRecorder(chunk_file)
             time.sleep(0.05)  # Conference bridge settling

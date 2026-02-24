@@ -1,6 +1,7 @@
 """Flask app factory with SocketIO for the ClaudePhone dashboard."""
 
 import logging
+import os
 import threading
 from typing import Optional
 
@@ -71,7 +72,7 @@ def get_setup_event() -> threading.Event:
 def _create_app_with_blueprints() -> Flask:
     """Create Flask app and register all blueprints."""
     app = Flask(__name__, template_folder="templates")
-    app.config["SECRET_KEY"] = "claudephone-dashboard"
+    app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
 
     socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
 

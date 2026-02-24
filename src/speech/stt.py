@@ -11,6 +11,8 @@ import logging
 from pathlib import Path
 from typing import Optional, Tuple
 
+from ..config import get_path
+
 logger = logging.getLogger(__name__)
 
 # Minimum language detection confidence to accept a result
@@ -27,15 +29,20 @@ HALLUCINATION_PATTERNS = {
 class STTEngine:
     """GPU-accelerated speech-to-text, constrained to Dutch + English."""
 
+    # Persistent cache dir matching the Docker volume mount
+    DEFAULT_CACHE_DIR = str(get_path("hf_cache"))
+
     def __init__(
         self,
         model_size: str = "medium",
         device: str = "cuda",
         compute_type: str = "auto",
+        cache_dir: str = DEFAULT_CACHE_DIR,
     ):
         self.model_size = model_size
         self.device = device
         self.compute_type = compute_type
+        self.cache_dir = cache_dir
         self.model = None
 
     def warmup(self) -> None:
@@ -58,6 +65,7 @@ class STTEngine:
                 self.model_size,
                 device=self.device,
                 compute_type=self.compute_type,
+                download_root=self.cache_dir,
             )
             logger.info("Whisper model loaded successfully")
         except Exception as e:
@@ -71,6 +79,7 @@ class STTEngine:
                         self.model_size,
                         device="cpu",
                         compute_type="int8",
+                        download_root=self.cache_dir,
                     )
                     self.device = "cpu"
                     self.compute_type = "int8"
@@ -93,7 +102,7 @@ class STTEngine:
 
         file_size = Path(audio_file).stat().st_size
         if file_size < 1000:
-            logger.debug("Audio file too small (%d bytes), skipping", file_size)
+            logger.info("Audio file too small (%d bytes), skipping STT", file_size)
             return None, None
 
         vad_params = dict(
@@ -117,6 +126,9 @@ class STTEngine:
                 lang_prob = info.language_probability if info else 0
                 logger.info("STT [nl, prob=%.2f]: %s", lang_prob, text[:100])
                 return text, "nl"
+
+            if not text:
+                logger.info("STT Dutch pass: no speech detected (VAD filtered all)")
         except Exception as e:
             logger.warning("Dutch transcription pass failed: %s", e)
 
@@ -132,11 +144,11 @@ class STTEngine:
             text = " ".join(segment.text for segment in segments).strip()
 
             if not text:
-                logger.debug("No speech detected (VAD filtered all audio)")
+                logger.info("STT English pass: no speech detected (VAD filtered all)")
                 return None, None
 
             if self._is_hallucination(text):
-                logger.debug("Rejected hallucination: '%s'", text)
+                logger.info("STT rejected hallucination: '%s'", text)
                 return None, None
 
             lang_prob = info.language_probability if info else 0

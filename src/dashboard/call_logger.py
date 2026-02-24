@@ -12,13 +12,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from ..config import get_path
+
 logger = logging.getLogger(__name__)
 
 
 class CallLogger:
     """Logs call events to daily JSON files."""
 
-    def __init__(self, log_dir: str = "/app/logs/calls"):
+    def __init__(self, log_dir: str = None):
+        if log_dir is None:
+            log_dir = str(get_path("logs_dir") / "calls")
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self._active_calls: Dict[str, dict] = {}

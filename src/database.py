@@ -11,15 +11,17 @@ from datetime import datetime, date
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from .config import get_path
 
-DB_PATH = "/app/data/claudephone.db"
+logger = logging.getLogger(__name__)
 
 
 class Database:
     """Thread-safe SQLite database for ClaudePhone."""
 
-    def __init__(self, db_path: str = DB_PATH):
+    def __init__(self, db_path: str = None):
+        if db_path is None:
+            db_path = str(get_path("db_file"))
         self.db_path = db_path
         self._local = threading.local()
         self._ensure_dir()
@@ -184,3 +186,21 @@ class Database:
 
     def mark_setup_complete(self) -> None:
         self.set_setting("setup_complete", "true")
+
+    def close(self) -> None:
+        """Close the database connection for the current thread."""
+        if hasattr(self._local, "conn") and self._local.conn is not None:
+            try:
+                self._local.conn.close()
+            except Exception:
+                pass
+            self._local.conn = None
+
+    def close_all(self) -> None:
+        """Close the database connection for the current thread.
+
+        Note: threading.local() only gives access to the current thread's data.
+        Other threads' connections will be closed when those threads end or
+        call close() explicitly.
+        """
+        self.close()

@@ -6,6 +6,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file
 
+from ..config import get_path
+
 logger = logging.getLogger(__name__)
 
 calls_bp = Blueprint("calls", __name__)
@@ -90,7 +92,7 @@ def make_test_call():
         # Pre-generate TTS
         audio_file = None
         if agent.tts:
-            audio_dir = Path("/app/audio/tmp")
+            audio_dir = get_path("audio_tmp")
             audio_dir.mkdir(parents=True, exist_ok=True)
             import time
             out = str(audio_dir / f"testcall_{int(time.time()*1000)}.wav")
