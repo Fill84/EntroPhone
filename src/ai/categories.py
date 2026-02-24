@@ -10,7 +10,7 @@ Categories are registered dynamically by plugins and built-in integrations.
 # Mutable registry — populated at startup by plugins and built-ins
 _CATEGORIES = {}
 
-# Built-in categories for core integrations (calendar, notes, media)
+# Built-in categories for core integrations (calendar, notes)
 _BUILTIN_CATEGORIES = {
     "calendar": {
         "nl": {
@@ -50,26 +50,6 @@ _BUILTIN_CATEGORIES = {
             ],
         },
     },
-    "media": {
-        "nl": {
-            "name": "Media",
-            "options": [
-                "Muziek afspelen",
-                "Muziek pauzeren of stoppen",
-                "Volume aanpassen",
-                "Volgend of vorig nummer",
-            ],
-        },
-        "en": {
-            "name": "Media",
-            "options": [
-                "Play music",
-                "Pause or stop music",
-                "Adjust volume",
-                "Next or previous track",
-            ],
-        },
-    },
 }
 
 
@@ -79,7 +59,7 @@ def register_categories(categories_dict: dict) -> None:
 
 
 def register_builtin_categories() -> None:
-    """Register the built-in calendar, notes, media categories."""
+    """Register the built-in calendar and notes categories."""
     _CATEGORIES.update(_BUILTIN_CATEGORIES)
 
 

@@ -23,6 +23,7 @@ class PluginManager:
     def __init__(self):
         self._plugins: Dict[str, PluginBase] = {}
         self._enabled: Dict[str, bool] = {}
+        self._plugin_paths: Dict[str, Path] = {}
         self._context: Optional[PluginContext] = None
         self._db = None
 
@@ -48,19 +49,21 @@ class PluginManager:
         return self._context
 
     def discover_and_load(self) -> List[str]:
-        """Scan plugins directory and load all valid plugin modules.
+        """Scan plugins directory and load all valid plugin packages.
 
         Returns list of loaded plugin names.
+        Only package directories (with __init__.py) are supported.
         """
         loaded = []
 
-        # Single .py files
+        # Warn about unsupported single .py plugin files
         for path in sorted(PLUGINS_DIR.glob("*.py")):
-            if path.name in SKIP_FILES:
-                continue
-            name = self._load_plugin_from_file(path)
-            if name:
-                loaded.append(name)
+            if path.name not in SKIP_FILES:
+                logger.warning(
+                    "Single-file plugin '%s' ignored. "
+                    "Plugins must be in a package directory with __init__.py.",
+                    path.name,
+                )
 
         # Package directories
         for path in sorted(PLUGINS_DIR.iterdir()):
@@ -72,26 +75,6 @@ class PluginManager:
                     loaded.append(name)
 
         return loaded
-
-    def _load_plugin_from_file(self, file_path: Path) -> Optional[str]:
-        """Load a plugin from a single .py file."""
-        module_name = f"src.plugins.{file_path.stem}"
-        try:
-            spec = importlib.util.spec_from_file_location(module_name, file_path)
-            module = importlib.util.module_from_spec(spec)
-            sys.modules[module_name] = module
-            spec.loader.exec_module(module)
-
-            plugin_cls = self._find_plugin_class(module)
-            if plugin_cls is None:
-                return None
-
-            return self._instantiate_plugin(plugin_cls)
-
-        except Exception as e:
-            logger.error("Failed to load plugin %s: %s", file_path.name, e,
-                         exc_info=True)
-            return None
 
     def _load_plugin_from_package(self, pkg_path: Path) -> Optional[str]:
         """Load a plugin from a package directory."""
@@ -110,7 +93,10 @@ class PluginManager:
             if plugin_cls is None:
                 return None
 
-            return self._instantiate_plugin(plugin_cls)
+            name = self._instantiate_plugin(plugin_cls)
+            if name:
+                self._plugin_paths[name] = pkg_path
+            return name
 
         except Exception as e:
             logger.error("Failed to load plugin package %s: %s",
@@ -197,14 +183,17 @@ class PluginManager:
         return True
 
     def load_new_plugin(self, file_path: Path) -> Optional[str]:
-        """Load a single new plugin file at runtime.
+        """Load a single new plugin package at runtime.
 
         Returns plugin name on success, None on failure.
+        Only package directories (with __init__.py) are supported.
         """
-        if file_path.is_file():
-            return self._load_plugin_from_file(file_path)
-        elif file_path.is_dir() and (file_path / "__init__.py").exists():
+        if file_path.is_dir() and (file_path / "__init__.py").exists():
             return self._load_plugin_from_package(file_path)
+        logger.warning(
+            "Plugin must be a package directory with __init__.py: %s",
+            file_path,
+        )
         return None
 
     def remove_plugin(self, name: str) -> bool:
@@ -223,6 +212,7 @@ class PluginManager:
         del self._plugins[name]
         if name in self._enabled:
             del self._enabled[name]
+        self._plugin_paths.pop(name, None)
 
         logger.info("Plugin removed: %s", name)
         return True

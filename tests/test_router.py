@@ -39,10 +39,11 @@ class TestIntentRouter:
         assert router.route("Wat zijn mijn taken?", "nl") == "notes"
 
     def test_media(self, router):
-        assert router.route("Play some music", "en") == "media"
-        assert router.route("Speel muziek", "nl") == "media"
-        assert router.route("Stop the music", "en") == "media"
-        assert router.route("Volume louder", "en") == "media"
+        # Media keywords now route to "homeassistant" (media is part of HA plugin)
+        assert router.route("Play some music", "en") == "homeassistant"
+        assert router.route("Speel muziek", "nl") == "homeassistant"
+        assert router.route("Stop the music", "en") == "homeassistant"
+        assert router.route("Volume louder", "en") == "homeassistant"
 
     def test_goodbye(self, router):
         assert router.route("Goodbye", "en") == "goodbye"

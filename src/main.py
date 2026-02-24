@@ -242,16 +242,6 @@ def _init_plugins(config, ollama, tts, callback_queue, call_logger, router):
         except Exception as e:
             logger.warning("Notes init failed: %s", e)
 
-    # Media (depends on HA plugin handler)
-    ha_plugin = pm.plugins.get("homeassistant")
-    if ha_plugin and pm.is_enabled("homeassistant") and hasattr(ha_plugin, "_handler") and ha_plugin._handler:
-        try:
-            from .integrations.media_agent import MediaHandler
-            integrations["media"] = MediaHandler(ha_plugin._handler)
-            logger.info("Media integration active (via HA plugin)")
-        except Exception as e:
-            logger.warning("Media init failed: %s", e)
-
     # Register built-in keywords in router
     if router:
         router.register_plugin_keywords("calendar", {
@@ -268,14 +258,6 @@ def _init_plugins(config, ollama, tts, callback_queue, call_logger, router):
                     "todo", "remind", "reminder", "write down",
                     "shopping list", "grocery"],
         })
-        router.register_plugin_keywords("media", {
-            "nl": ["muziek", "speel", "afspelen", "stop", "pauze",
-                    "pauzeer", "volume", "harder", "zachter",
-                    "volgend", "vorig", "liedje", "nummer"],
-            "en": ["music", "play", "stop", "pause",
-                    "volume", "louder", "quieter", "softer",
-                    "next", "previous", "song", "track"],
-        })
         router.register_category_names("calendar", {
             "nl": ["agenda", "kalender", "planning"],
             "en": ["calendar", "agenda", "schedule"],
@@ -284,11 +266,6 @@ def _init_plugins(config, ollama, tts, callback_queue, call_logger, router):
             "nl": ["notities", "taken"],
             "en": ["notes", "tasks"],
         })
-        router.register_category_names("media", {
-            "nl": ["media", "muziek"],
-            "en": ["media", "music"],
-        })
-
     return pm, db, integrations
 
 

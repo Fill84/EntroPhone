@@ -5,7 +5,7 @@ Two-tier approach:
 2. Ollama fallback for complex/ambiguous input
 
 Keywords and categories are registered dynamically by the plugin system.
-Built-in routes (goodbye, time) and built-in integrations (calendar, notes, media)
+Built-in routes (goodbye, time) and built-in integrations (calendar, notes)
 are registered at startup alongside plugin-provided routes.
 """
 

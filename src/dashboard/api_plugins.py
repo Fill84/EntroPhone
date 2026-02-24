@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import tempfile
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -111,12 +112,50 @@ def test_plugin(name):
 PLUGINS_DIR = Path(__file__).parent.parent / "plugins"
 
 
+def _generate_init_py(plugin_filename: str) -> str:
+    """Generate an __init__.py that imports all classes from a plugin file."""
+    module_stem = plugin_filename.replace(".py", "")
+    return f"from .{module_stem} import *\n"
+
+
+def _install_from_dir(source_dir: Path, pm) -> list:
+    """Install a plugin from a package directory into a random folder."""
+    random_name = f"plugin_{uuid.uuid4().hex[:8]}"
+    dest_dir = PLUGINS_DIR / random_name
+    if dest_dir.exists():
+        shutil.rmtree(str(dest_dir))
+    shutil.copytree(str(source_dir), str(dest_dir))
+    name = pm.load_new_plugin(dest_dir)
+    if name:
+        _refresh_router(pm)
+        return [name]
+    # Cleanup on failure
+    shutil.rmtree(str(dest_dir), ignore_errors=True)
+    return []
+
+
+def _install_from_file(source_file: Path, pm) -> list:
+    """Wrap a single .py plugin file in a package directory and install."""
+    random_name = f"plugin_{uuid.uuid4().hex[:8]}"
+    dest_dir = PLUGINS_DIR / random_name
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(source_file), str(dest_dir / source_file.name))
+    (dest_dir / "__init__.py").write_text(_generate_init_py(source_file.name))
+    name = pm.load_new_plugin(dest_dir)
+    if name:
+        _refresh_router(pm)
+        return [name]
+    # Cleanup on failure
+    shutil.rmtree(str(dest_dir), ignore_errors=True)
+    return []
+
+
 @plugins_bp.route("/install", methods=["POST"])
 def install_plugin():
     """Install a plugin from a GitHub repository URL.
 
     Accepts: {"url": "https://github.com/user/repo"}
-    Downloads the repo, finds plugin files, copies to src/plugins/.
+    Downloads the repo, finds plugin files, copies to src/plugins/<random>/.
     """
     pm = _get_pm()
     if not pm:
@@ -158,41 +197,35 @@ def install_plugin():
                 return jsonify({"error": "Empty archive"}), 400
             root = extracted[0]
 
-            # Find plugin files: plugin_*.py or directories with __init__.py
             installed = []
-            for f in root.iterdir():
-                if f.is_file() and f.name.startswith("plugin_") and f.suffix == ".py":
-                    dest = PLUGINS_DIR / f.name
-                    shutil.copy2(str(f), str(dest))
-                    name = pm.load_new_plugin(dest)
-                    if name:
-                        installed.append(name)
-                        _refresh_router(pm)
-                elif f.is_dir() and (f / "__init__.py").exists() and not f.name.startswith("_"):
-                    dest = PLUGINS_DIR / f.name
-                    if dest.exists():
-                        shutil.rmtree(str(dest))
-                    shutil.copytree(str(f), str(dest))
-                    name = pm.load_new_plugin(dest)
-                    if name:
-                        installed.append(name)
-                        _refresh_router(pm)
 
-            # If no plugin_*.py found at root, check for src/plugins/ in repo
+            # Check root for plugin package directories or .py files
+            for f in root.iterdir():
+                if f.is_dir() and (f / "__init__.py").exists() and not f.name.startswith("_"):
+                    installed.extend(_install_from_dir(f, pm))
+                    if installed:
+                        break
+                elif f.is_file() and f.suffix == ".py" and not f.name.startswith("_"):
+                    installed.extend(_install_from_file(f, pm))
+                    if installed:
+                        break
+
+            # Fallback: check src/plugins/ in repo
             if not installed:
                 src_plugins = root / "src" / "plugins"
                 if src_plugins.is_dir():
                     for f in src_plugins.iterdir():
-                        if f.is_file() and f.name.startswith("plugin_") and f.suffix == ".py":
-                            dest = PLUGINS_DIR / f.name
-                            shutil.copy2(str(f), str(dest))
-                            name = pm.load_new_plugin(dest)
-                            if name:
-                                installed.append(name)
-                                _refresh_router(pm)
+                        if f.is_dir() and (f / "__init__.py").exists() and not f.name.startswith("_"):
+                            installed.extend(_install_from_dir(f, pm))
+                            if installed:
+                                break
+                        elif f.is_file() and f.suffix == ".py" and not f.name.startswith("_"):
+                            installed.extend(_install_from_file(f, pm))
+                            if installed:
+                                break
 
             if not installed:
-                return jsonify({"error": "No valid plugin files found in repository. Plugin files must be named plugin_*.py"}), 400
+                return jsonify({"error": "No valid plugin found in repository"}), 400
 
             return jsonify({
                 "success": True,
@@ -209,7 +242,7 @@ def install_plugin():
 
 @plugins_bp.route("/<name>/uninstall", methods=["POST"])
 def uninstall_plugin(name):
-    """Uninstall a plugin by removing its file and unloading it."""
+    """Uninstall a plugin by removing its directory and unloading it."""
     pm = _get_pm()
     if not pm:
         return jsonify({"error": "Plugin manager not available"}), 503
@@ -218,19 +251,17 @@ def uninstall_plugin(name):
     if not plugin:
         return jsonify({"error": "Plugin not found"}), 404
 
+    # Get the plugin's directory path before removing
+    plugin_path = pm._plugin_paths.get(name)
+
     # Remove from manager
     pm.remove_plugin(name)
     _refresh_router(pm)
 
-    # Try to delete the plugin file
+    # Delete the plugin directory
     deleted_file = False
-    plugin_file = PLUGINS_DIR / f"plugin_{name}.py"
-    plugin_dir = PLUGINS_DIR / name
-    if plugin_file.exists():
-        os.remove(str(plugin_file))
-        deleted_file = True
-    elif plugin_dir.is_dir():
-        shutil.rmtree(str(plugin_dir))
+    if plugin_path and plugin_path.is_dir():
+        shutil.rmtree(str(plugin_path))
         deleted_file = True
 
     return jsonify({"success": True, "file_deleted": deleted_file})
@@ -244,8 +275,8 @@ def _refresh_router(pm):
         agent.router.register_from_plugin_manager(pm)
         # Update integrations dict on the agent
         enabled = pm.get_integrations_dict()
-        # Merge with built-in integrations (keep calendar, notes, media)
+        # Merge with built-in integrations (keep calendar, notes)
         for key in list(agent.integrations.keys()):
-            if key not in enabled and key not in ("calendar", "notes", "media"):
+            if key not in enabled and key not in ("calendar", "notes"):
                 del agent.integrations[key]
         agent.integrations.update(enabled)
