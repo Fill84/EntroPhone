@@ -64,7 +64,7 @@ All configuration is done via environment variables in `.env`. The dashboard pro
 | `SIP_USERNAME` | SIP account username | *required* |
 | `SIP_PASSWORD` | SIP account password | *required* |
 | `OLLAMA_BASE_URL` | Ollama API URL | `http://host.docker.internal:11434` |
-| `OLLAMA_MODEL` | LLM model name | `glm-4.7-flash:latest` |
+| `OLLAMA_MODEL` | LLM model name | `llama3.2:1b` |
 | `STT_MODEL_SIZE` | Whisper model size | `medium` |
 | `STT_DEVICE` | STT device (cuda/cpu) | `cuda` |
 | `DASHBOARD_PORT` | Dashboard web port | `8080` |
