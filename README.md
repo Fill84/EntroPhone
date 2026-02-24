@@ -10,7 +10,7 @@ A self-hosted, natural SIP voice assistant that answers phone calls with AI. Bui
 - **AI responses** via Ollama (any local LLM model)
 - **Plugin system** for extending functionality (Home Assistant, monitoring, custom integrations)
 - **Web dashboard** with real-time status, configuration, call history, and system monitoring
-- **Built-in integrations**: Calendar, Notes, Media Player
+- **Built-in integrations**: Calendar, Notes
 - **Voice Activity Detection** with Silero VAD
 - **Callback system** for deferred responses
 - **100% self-hosted** — no cloud dependencies

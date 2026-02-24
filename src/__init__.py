@@ -1,1 +1,1 @@
-# ClaudePhone2 - Natural SIP Voice Agent
+# ClaudePhone - Natural SIP Voice Agent

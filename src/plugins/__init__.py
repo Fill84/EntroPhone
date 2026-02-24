@@ -1,1 +1,1 @@
-"""ClaudePhone2 plugin system."""
+"""ClaudePhone plugin system."""

@@ -74,7 +74,7 @@ def make_test_call():
 
     data = request.json or {}
     number = data.get("number", "")
-    message = data.get("message", "Dit is een testgesprek van ClaudeViool.")
+    message = data.get("message", "Dit is een testgesprek van ClaudePhone.")
 
     if not number:
         return jsonify({"error": "number parameter required"}), 400

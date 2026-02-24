@@ -1,4 +1,4 @@
-"""Base class for all ClaudePhone2 plugins."""
+"""Base class for all ClaudePhone plugins."""
 
 import logging
 from abc import ABC, abstractmethod
@@ -33,7 +33,7 @@ class PluginMeta:
 
 
 class PluginBase(ABC):
-    """Abstract base class for ClaudePhone2 plugins.
+    """Abstract base class for ClaudePhone plugins.
 
     Every plugin must subclass this and implement:
     - meta (PluginMeta)

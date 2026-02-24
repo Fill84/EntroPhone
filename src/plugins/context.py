@@ -19,7 +19,11 @@ class PluginContext:
     config: Dict[str, Any] = field(default_factory=dict)
 
     def get_env(self, key: str, default: str = "") -> str:
-        """Get an environment variable value."""
+        """Get a configuration value. Checks DB first, then environment."""
+        if self.db:
+            db_val = self.db.get_setting(key)
+            if db_val is not None:
+                return db_val
         return os.getenv(key, default)
 
     def get_env_bool(self, key: str, default: bool = False) -> bool:

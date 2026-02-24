@@ -403,7 +403,7 @@ class VoiceCall(pj.Call):
 
             # Play personalized greeting
             detected_lang = "nl"  # Default to Dutch
-            assistant_name = config.get("assistant", {}).get("name", "ClaudeViool")
+            assistant_name = config.get("assistant", {}).get("name", "ClaudePhone")
             self._speak_greeting(assistant_name, detected_lang)
 
             silence_cycles = 0

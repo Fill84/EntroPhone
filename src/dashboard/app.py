@@ -1,4 +1,4 @@
-"""Flask app factory with SocketIO for the ClaudePhone2 dashboard."""
+"""Flask app factory with SocketIO for the ClaudePhone dashboard."""
 
 import logging
 import threading
@@ -16,6 +16,10 @@ _agent = None
 _config = None
 _callback_queue = None
 _call_logger = None
+_db = None
+
+# Event signaled when setup is completed via the wizard
+_setup_event = threading.Event()
 
 
 def get_agent():
@@ -34,22 +38,43 @@ def get_call_logger():
     return _call_logger
 
 
-def create_app(agent, config, callback_queue, call_logger=None) -> Flask:
-    """Create and configure the Flask application."""
+def get_db():
+    """Get the database instance (available even before agent exists)."""
+    if _db:
+        return _db
+    agent = get_agent()
+    if agent:
+        return getattr(agent, '_db', None)
+    return None
+
+
+def set_agent(agent):
+    """Set the agent reference after components are initialized."""
     global _agent, _config, _callback_queue, _call_logger
-
     _agent = agent
-    _config = config
-    _callback_queue = callback_queue
-    _call_logger = call_logger
+    _config = getattr(agent, 'config', _config)
+    _callback_queue = getattr(agent, 'callback_queue', _callback_queue)
+    _call_logger = getattr(agent, 'call_logger', _call_logger)
+    logger.info("Dashboard agent reference updated")
 
+
+def signal_setup_complete():
+    """Signal that setup has been completed (unblocks the main thread)."""
+    _setup_event.set()
+
+
+def get_setup_event() -> threading.Event:
+    """Get the setup event for waiting."""
+    return _setup_event
+
+
+def _create_app_with_blueprints() -> Flask:
+    """Create Flask app and register all blueprints."""
     app = Flask(__name__, template_folder="templates")
-    app.config["SECRET_KEY"] = "claudephone2-dashboard"
+    app.config["SECRET_KEY"] = "claudephone-dashboard"
 
-    # Initialize SocketIO
     socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
 
-    # Register blueprints
     from .routes import main_bp
     from .api_config import config_bp
     from .api_tests import tests_bp
@@ -68,15 +93,61 @@ def create_app(agent, config, callback_queue, call_logger=None) -> Flask:
     app.register_blueprint(data_bp, url_prefix="/api/data")
     app.register_blueprint(plugins_bp, url_prefix="/api/plugins")
 
-    # Register SocketIO events
     from .audio_streamer import register_socket_events
     register_socket_events(socketio)
 
     return app
 
 
+def create_app(agent, config, callback_queue, call_logger=None) -> Flask:
+    """Create and configure the Flask application (legacy, with agent)."""
+    global _agent, _config, _callback_queue, _call_logger
+
+    _agent = agent
+    _config = config
+    _callback_queue = callback_queue
+    _call_logger = call_logger
+
+    return _create_app_with_blueprints()
+
+
+def init_dashboard_early(db, port=8080):
+    """Start the dashboard BEFORE agent is available (setup mode).
+
+    All blueprints are registered. Routes that need the agent will
+    gracefully return 503 when agent is None.
+    """
+    global _db
+    _db = db
+
+    app = _create_app_with_blueprints()
+
+    thread = threading.Thread(
+        target=lambda: socketio.run(
+            app, host="0.0.0.0", port=port,
+            debug=False, use_reloader=False, allow_unsafe_werkzeug=True,
+        ),
+        daemon=True,
+        name="dashboard",
+    )
+    thread.start()
+    logger.info("Dashboard started on port %d (setup mode)", port)
+
+
 def init_dashboard(agent, config, callback_queue, call_logger=None, port=8080):
     """Initialize and start the dashboard in a background thread."""
+    global _agent, _config, _callback_queue, _call_logger
+
+    _agent = agent
+    _config = config
+    _callback_queue = callback_queue
+    _call_logger = call_logger
+
+    # If dashboard is already running (from init_dashboard_early), just update refs
+    if _db is not None:
+        logger.info("Dashboard already running, agent reference updated")
+        return
+
     app = create_app(agent, config, callback_queue, call_logger)
 
     thread = threading.Thread(

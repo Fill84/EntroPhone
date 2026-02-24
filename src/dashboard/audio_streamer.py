@@ -56,7 +56,7 @@ def _ensure_log_thread(socketio: SocketIO) -> None:
 
 def _tail_logs(socketio: SocketIO) -> None:
     """Tail the log file and emit new lines via SocketIO."""
-    log_file = Path("/app/logs/claudephone2.log")
+    log_file = Path("/app/logs/claudephone.log")
 
     if not log_file.exists():
         return

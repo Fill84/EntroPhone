@@ -51,7 +51,7 @@ def get_resources():
 @system_bp.route("/logs")
 def get_logs():
     """Get recent log lines."""
-    log_file = Path("/app/logs/claudephone2.log")
+    log_file = Path("/app/logs/claudephone.log")
     lines = request.args.get("lines", 100, type=int)
     search = request.args.get("search", "")
 

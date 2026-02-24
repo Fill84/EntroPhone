@@ -1,50 +1,117 @@
-"""ClaudePhone2 - Natural SIP Voice Agent.
+"""ClaudePhone - Natural SIP Voice Agent.
 
-Entry point: initializes all components and starts the SIP agent.
+Entry point: starts dashboard first, waits for setup if needed,
+then initializes all components and starts the SIP agent.
 """
 
 import logging
+import os
 import sys
+import time
 from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Setup logging first
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/app/logs/claudephone2.log", encoding="utf-8"),
-    ],
-)
+# Setup logging: file gets everything, console shows our INFO + external WARNING+
+_log_format = "%(asctime)s [%(name)s] %(levelname)s: %(message)s"
+
+
+class _ConsoleFilter(logging.Filter):
+    """Show INFO+ from our app, WARNING+ from external libraries."""
+    def filter(self, record):
+        if record.name.startswith("src."):
+            return True
+        return record.levelno >= logging.WARNING
+
+
+_file_handler = logging.FileHandler("/app/logs/claudephone.log", encoding="utf-8")
+_file_handler.setLevel(logging.INFO)
+_file_handler.setFormatter(logging.Formatter(_log_format))
+
+_console_handler = logging.StreamHandler(sys.stdout)
+_console_handler.setLevel(logging.INFO)
+_console_handler.setFormatter(logging.Formatter(_log_format))
+_console_handler.addFilter(_ConsoleFilter())
+
+logging.basicConfig(level=logging.INFO, handlers=[_console_handler, _file_handler])
+
 logger = logging.getLogger(__name__)
 
 
 def main():
     logger.info("=" * 60)
-    logger.info("ClaudePhone2 - Natural SIP Voice Agent starting...")
+    logger.info("ClaudePhone - Natural SIP Voice Agent starting...")
     logger.info("=" * 60)
 
-    # Load environment
+    # Step 1: Load .env for backward compatibility
     env_path = Path("/app/.env")
     if env_path.exists():
         load_dotenv(str(env_path))
     else:
         load_dotenv()
 
-    from .config import get_config, validate_config
+    # Step 2: Initialize database EARLY (before anything else)
+    from .database import Database
+    try:
+        db = Database()
+        logger.info("Database initialized")
+    except Exception as e:
+        logger.error("FATAL: Database init failed: %s", e)
+        sys.exit(1)
 
-    config = get_config()
+    # Step 3: Import .env values into DB (migration)
+    from .config import import_env_to_db, check_required_settings
+
+    imported = import_env_to_db(db)
+    if imported:
+        logger.info("Imported %d settings from .env to database", imported)
+
+    # Step 4: Check if setup is complete
+    setup_complete = db.is_setup_complete()
+    if not setup_complete:
+        # Auto-complete setup if all required settings are already in DB
+        if check_required_settings(db):
+            db.mark_setup_complete()
+            setup_complete = True
+            logger.info("All required settings found, setup auto-completed")
+
+    # Step 5: Get dashboard port (from DB or env, with fallback)
+    dashboard_port_str = db.get_setting("DASHBOARD_PORT") or os.getenv("DASHBOARD_PORT", "8080")
+    try:
+        dashboard_port = int(dashboard_port_str)
+    except (ValueError, TypeError):
+        dashboard_port = 8080
+
+    # Step 6: Start dashboard ALWAYS (even without full config)
+    _start_dashboard_early(db, dashboard_port)
+
+    # Step 7: If setup not complete, wait for it
+    if not setup_complete:
+        logger.info("=" * 60)
+        logger.info("SETUP REQUIRED!")
+        logger.info("Open http://localhost:%d to complete setup", dashboard_port)
+        logger.info("=" * 60)
+        _wait_for_setup()
+        logger.info("Setup completed! Starting components...")
+
+    # Step 8: Load config from DB
+    from .config import load_config_from_db, set_config, validate_config
+
+    config = load_config_from_db(db)
+    set_config(config)
+
     errors = validate_config(config)
     if errors:
         for err in errors:
             logger.error("Config error: %s", err)
-        sys.exit(1)
+        logger.error("Fix configuration via dashboard at http://localhost:%d", dashboard_port)
+        _wait_for_valid_config(db)
+        config = load_config_from_db(db)
+        set_config(config)
 
-    logger.info("Configuration loaded successfully")
+    logger.info("Configuration loaded successfully from database")
 
-    # Initialize components
+    # Step 9: Initialize all components
     tts = _init_tts(config)
     stt = _init_stt(config)
     vad_recorder = _init_vad(config)
@@ -54,11 +121,11 @@ def main():
     call_logger = _init_call_logger()
     conversation_factory = _init_conversation_factory(config)
 
-    # Initialize plugin system
-    plugin_manager, db, integrations = _init_plugins(
-        config, ollama, tts, callback_queue, call_logger, router)
+    # Step 10: Initialize plugin system (using existing db)
+    plugin_manager, _, integrations = _init_plugins(
+        config, ollama, tts, callback_queue, call_logger, router, db)
 
-    # Start SIP agent
+    # Step 11: Create SIP agent
     from .sip.agent import SIPVoiceAgent
 
     agent = SIPVoiceAgent(
@@ -77,17 +144,38 @@ def main():
     agent._db = db
     agent._plugin_manager = plugin_manager
 
-    # Start dashboard
-    try:
-        from .dashboard.app import init_dashboard
-
-        init_dashboard(agent, config, callback_queue, call_logger=call_logger,
-                       port=config["dashboard"]["port"])
-    except Exception as e:
-        logger.warning("Dashboard init failed: %s", e)
+    # Step 12: Update dashboard with agent reference
+    from .dashboard.app import set_agent
+    set_agent(agent)
 
     logger.info("All components initialized, starting SIP agent...")
     agent.start()  # Blocks here
+
+
+def _start_dashboard_early(db, port):
+    """Start the dashboard before agent exists (setup mode)."""
+    try:
+        from .dashboard.app import init_dashboard_early
+        init_dashboard_early(db=db, port=port)
+    except Exception as e:
+        logger.warning("Dashboard init failed: %s", e)
+
+
+def _wait_for_setup():
+    """Block until setup is completed via the dashboard."""
+    from .dashboard.app import get_setup_event
+    event = get_setup_event()
+    event.wait()
+
+
+def _wait_for_valid_config(db):
+    """Block until valid config is present in DB."""
+    from .config import load_config_from_db, validate_config
+    while True:
+        time.sleep(5)
+        config = load_config_from_db(db)
+        if not validate_config(config):
+            return
 
 
 def _init_tts(config):
@@ -183,19 +271,10 @@ def _init_callback_queue():
         return None
 
 
-def _init_plugins(config, ollama, tts, callback_queue, call_logger, router):
-    """Initialize plugin system: discover plugins, load built-ins, wire router."""
+def _init_plugins(config, ollama, tts, callback_queue, call_logger, router, db):
+    """Initialize plugin system using the already-initialized database."""
     from .plugins.manager import PluginManager
     from .ai.categories import register_builtin_categories, register_categories
-
-    # Initialize shared database
-    db = None
-    try:
-        from .database import Database
-        db = Database()
-        logger.info("SQLite database initialized")
-    except Exception as e:
-        logger.warning("Database init failed: %s", e)
 
     # Create plugin manager and context
     pm = PluginManager()
@@ -287,7 +366,7 @@ def _init_conversation_factory(config):
     try:
         from .ai.conversation import ConversationManager
 
-        assistant_name = config.get("assistant", {}).get("name", "ClaudeViool")
+        assistant_name = config.get("assistant", {}).get("name", "ClaudePhone")
 
         def factory():
             return ConversationManager(max_history=20, assistant_name=assistant_name)

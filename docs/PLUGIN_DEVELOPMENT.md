@@ -1,10 +1,10 @@
-# ClaudePhone2 Plugin Development Guide
+# ClaudePhone Plugin Development Guide
 
-This guide explains how to create plugins for ClaudePhone2, the natural SIP voice assistant.
+This guide explains how to create plugins for ClaudePhone, the natural SIP voice assistant.
 
 ## Overview
 
-Plugins extend ClaudePhone2 with new capabilities that users can trigger via voice commands during phone calls. Each plugin:
+Plugins extend ClaudePhone with new capabilities that users can trigger via voice commands during phone calls. Each plugin:
 
 - Handles specific voice commands (keywords) in Dutch and English
 - Can integrate with external services (APIs, smart home, etc.)
@@ -316,7 +316,7 @@ class WeatherPlugin(PluginBase):
             display_name="Weather",
             description="Get weather information via OpenWeatherMap",
             version="1.0.0",
-            author="ClaudePhone2 Community",
+            author="ClaudePhone Community",
         )
 
     @property

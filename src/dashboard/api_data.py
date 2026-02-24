@@ -9,12 +9,9 @@ data_bp = Blueprint("data", __name__)
 
 
 def _get_db():
-    """Get the shared Database instance from the agent."""
-    from .app import get_agent
-    agent = get_agent()
-    if not agent:
-        return None
-    return getattr(agent, '_db', None)
+    """Get the shared Database instance (available even before agent exists)."""
+    from .app import get_db
+    return get_db()
 
 
 # ==================== Notes ====================
@@ -102,59 +99,3 @@ def delete_event(event_id):
         return jsonify({"error": "Database not available"}), 503
     success = db.delete_event(event_id)
     return jsonify({"success": success})
-
-
-# ==================== Media ====================
-
-def _get_media_handler():
-    """Get the media integration handler from the agent."""
-    from .app import get_agent
-    agent = get_agent()
-    if not agent:
-        return None
-    return agent.integrations.get("media")
-
-
-@data_bp.route("/media/status")
-def media_status():
-    """Get media player status."""
-    handler = _get_media_handler()
-    if not handler:
-        return jsonify({"available": False, "reason": "Media integration not active (requires Home Assistant plugin)"})
-    player = handler._get_player()
-    return jsonify({
-        "available": True,
-        "player": player,
-    })
-
-
-@data_bp.route("/media/command", methods=["POST"])
-def media_command():
-    """Send a media control command."""
-    handler = _get_media_handler()
-    if not handler:
-        return jsonify({"error": "Media integration not active"}), 503
-
-    data = request.json or {}
-    command = data.get("command", "")
-    if command not in ("play", "stop", "pause", "volume_up", "volume_down", "next", "previous"):
-        return jsonify({"error": "Invalid command"}), 400
-
-    player = handler._get_player()
-    if not player:
-        return jsonify({"error": "No media player found in Home Assistant"}), 404
-
-    service_map = {
-        "play": "media_play",
-        "stop": "media_stop",
-        "pause": "media_pause",
-        "volume_up": "volume_up",
-        "volume_down": "volume_down",
-        "next": "media_next_track",
-        "previous": "media_previous_track",
-    }
-    try:
-        handler.ha._call_service("media_player", service_map[command], player)
-        return jsonify({"success": True, "command": command, "player": player})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500

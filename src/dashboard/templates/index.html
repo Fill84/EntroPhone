@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ClaudeViool Dashboard</title>
+    <title>ClaudePhone Dashboard</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
     <style>
         * {
@@ -449,7 +449,8 @@
             color: #94a3b8;
         }
 
-        .wizard-field input, .wizard-field select {
+        .wizard-field input,
+        .wizard-field select {
             width: 100%;
             padding: 8px 12px;
             background: #0f172a;
@@ -464,14 +465,72 @@
             justify-content: space-between;
             margin-top: 1.5rem;
         }
+
+        /* Toast notifications */
+        #toast-container {
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .toast {
+            padding: 12px 20px;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 0.9rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            animation: toastIn 0.3s ease-out;
+            max-width: 400px;
+        }
+
+        .toast.success {
+            background: #166534;
+            border: 1px solid #22c55e;
+        }
+
+        .toast.error {
+            background: #7f1d1d;
+            border: 1px solid #ef4444;
+        }
+
+        .toast.info {
+            background: #1e3a5f;
+            border: 1px solid #38bdf8;
+        }
+
+        .toast.warning {
+            background: #713f12;
+            border: 1px solid #f59e0b;
+        }
+
+        .toast.fade-out {
+            animation: toastOut 0.3s ease-in forwards;
+        }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(40px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes toastOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(40px); }
+        }
     </style>
 </head>
 
 <body>
+    <!-- Toast notification container -->
+    <div id="toast-container"></div>
+
     <!-- Setup Wizard Overlay (hidden by default) -->
     <div class="wizard-overlay" id="setup-wizard" style="display:none">
         <div class="wizard-card">
-            <h2>ClaudeViool Setup</h2>
+            <h2>ClaudePhone Setup</h2>
             <p style="color:#94a3b8;margin-bottom:1rem">Configure your voice assistant in a few steps.</p>
             <div class="wizard-steps" id="wizard-steps"></div>
             <div id="wizard-content"></div>
@@ -484,7 +543,7 @@
 
     <!-- Header -->
     <div class="header">
-        <h1>ClaudeViool</h1>
+        <h1>ClaudePhone</h1>
         <div class="header-status">
             <span><span class="status-dot" id="hdr-sip"></span> SIP</span>
             <span><span class="status-dot" id="hdr-call"></span> <span id="hdr-call-text">Idle</span></span>
@@ -592,7 +651,7 @@
                     </div>
                     <div class="form-row">
                         <label>Message</label>
-                        <textarea id="call-message">Dit is een testgesprek van ClaudeViool.</textarea>
+                        <textarea id="call-message">Dit is een testgesprek van ClaudePhone.</textarea>
                     </div>
                     <button onclick="makeTestCall()">Call</button>
                     <div class="result-box mt-1" id="call-result" style="display:none"></div>
@@ -602,40 +661,30 @@
 
         <!-- ============ CONFIG TAB ============ -->
         <div class="tab-panel" id="panel-config">
-            <div class="card">
-                <h3>Configuration Editor</h3>
-                <div class="flex mb-1">
-                    <button onclick="loadConfig()">Refresh</button>
-                    <button class="btn-success" onclick="reloadConfig()">Reload All</button>
-                </div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Key</th>
-                            <th>Value</th>
-                            <th>Reload</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody id="config-body"></tbody>
-                </table>
+            <div class="flex mb-1">
+                <button onclick="loadConfig()">Refresh</button>
+                <button class="btn-success" onclick="saveAllConfig()">Save All</button>
             </div>
-
+            <div id="config-groups"></div>
         </div>
 
         <!-- ============ PLUGINS TAB ============ -->
         <div class="tab-panel" id="panel-plugins">
             <div class="card">
                 <h3>Install Plugin from GitHub</h3>
-                <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Enter a GitHub repository URL containing a ClaudePhone2 plugin.</p>
+                <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Enter a GitHub repository URL containing a
+                    ClaudePhone plugin.</p>
                 <div style="display:flex;gap:6px">
-                    <input id="plugin-github-url" placeholder="https://github.com/user/plugin-repo" style="flex:1;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px">
-                    <button class="btn-sm btn-success" onclick="installPluginFromGithub()" id="plugin-install-btn">Install</button>
+                    <input id="plugin-github-url" placeholder="https://github.com/user/plugin-repo"
+                        style="flex:1;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px">
+                    <button class="btn-sm btn-success" onclick="installPluginFromGithub()"
+                        id="plugin-install-btn">Install</button>
                 </div>
                 <div id="plugin-install-status" style="font-size:0.8rem;margin-top:4px"></div>
             </div>
-            <div class="card">
-                <h3>Installed Plugins <button class="btn-sm" onclick="loadPlugins()" style="margin-left:8px">Refresh</button></h3>
+            <div class="card mt-2">
+                <h3>Installed Plugins <button class="btn-sm" onclick="loadPlugins()"
+                        style="margin-left:8px">Refresh</button></h3>
                 <div id="plugins-list">Loading...</div>
             </div>
         </div>
@@ -644,8 +693,10 @@
         <div class="tab-panel" id="panel-models">
             <div class="grid">
                 <div class="card">
-                    <h3>Ollama Models (AI/LLM) <button class="btn-sm" onclick="loadOllamaModels()" style="margin-left:8px">Refresh</button></h3>
-                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 10px">The AI model used for generating responses during calls.</p>
+                    <h3>Ollama Models (AI/LLM) <button class="btn-sm" onclick="loadOllamaModels()"
+                            style="margin-left:8px">Refresh</button></h3>
+                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 10px">The AI model used for generating responses
+                        during calls.</p>
                     <div class="stat" style="background:#0f172a;border-radius:8px;padding:10px">
                         <span class="stat-label">Active Model</span>
                         <span class="stat-value" id="current-ollama" style="color:#38bdf8">-</span>
@@ -654,15 +705,19 @@
                     <div style="margin-top:12px;border-top:1px solid #334155;padding-top:12px">
                         <label style="font-size:0.85rem;color:#94a3b8">Pull new model from Ollama registry</label>
                         <div style="display:flex;gap:6px;margin-top:4px">
-                            <input id="ollama-pull-name" placeholder="e.g. llama3:8b or mistral:latest" style="flex:1;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px">
-                            <button class="btn-sm btn-success" onclick="pullOllamaModel()" id="ollama-pull-btn">Pull</button>
+                            <input id="ollama-pull-name" placeholder="e.g. llama3:8b or mistral:latest"
+                                style="flex:1;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px">
+                            <button class="btn-sm btn-success" onclick="pullOllamaModel()"
+                                id="ollama-pull-btn">Pull</button>
                         </div>
                         <div id="ollama-pull-status" style="font-size:0.8rem;margin-top:4px"></div>
                     </div>
                 </div>
                 <div class="card">
-                    <h3>TTS Voices (Text-to-Speech) <button class="btn-sm" onclick="loadTTSVoices()" style="margin-left:8px">Refresh</button></h3>
-                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 10px">Piper TTS voices used for speaking. Each language has its own active voice.</p>
+                    <h3>TTS Voices (Text-to-Speech) <button class="btn-sm" onclick="loadTTSVoices()"
+                            style="margin-left:8px">Refresh</button></h3>
+                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 10px">Piper TTS voices used for speaking. Each
+                        language has its own active voice.</p>
                     <div id="tts-current" class="mb-1"></div>
                     <div id="tts-voices"></div>
                 </div>
@@ -704,21 +759,27 @@
                 <div class="stat"><span class="stat-label">Duration</span><span class="stat-value"
                         id="detail-duration"></span></div>
                 <div id="detail-player"></div>
-                <h3 class="mt-1">Transcript <button class="btn-sm" id="btn-download-transcript" onclick="downloadTranscript()" style="margin-left:8px;display:none">Download .md</button></h3>
+                <h3 class="mt-1">Transcript <button class="btn-sm" id="btn-download-transcript"
+                        onclick="downloadTranscript()" style="margin-left:8px;display:none">Download .md</button></h3>
                 <div id="detail-transcript"></div>
             </div>
         </div>
 
         <!-- ============ DATA TAB (Built-in Integrations) ============ -->
         <div class="tab-panel" id="panel-data">
-            <p style="color:#94a3b8;font-size:0.85rem;margin:0 0 12px">Built-in integrations managed by ClaudePhone2. These are always available and store data locally in SQLite. Users can interact with these via phone calls.</p>
+            <p style="color:#94a3b8;font-size:0.85rem;margin:0 0 12px">Built-in integrations managed by ClaudePhone.
+                These are always available and store data locally in SQLite. Users can interact with these via phone
+                calls.</p>
             <div class="grid">
                 <!-- Notes Section -->
                 <div class="card">
-                    <h3>Notes (Notities) <button class="btn-sm" onclick="loadNotes()" style="margin-left:8px">Refresh</button></h3>
-                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Notes and reminders. Say "onthoud..." or "remember..." during a call to add notes via voice.</p>
+                    <h3>Notes (Notities) <button class="btn-sm" onclick="loadNotes()"
+                            style="margin-left:8px">Refresh</button></h3>
+                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Notes and reminders. Say "onthoud..." or
+                        "remember..." during a call to add notes via voice.</p>
                     <div class="flex mb-1">
-                        <input id="note-input" placeholder="Add a note..." style="flex:1" onkeyup="if(event.key==='Enter')addNote()">
+                        <input id="note-input" placeholder="Add a note..." style="flex:1"
+                            onkeyup="if(event.key==='Enter')addNote()">
                         <button class="btn-success btn-sm" onclick="addNote()">Add</button>
                     </div>
                     <div id="notes-list" style="max-height:400px;overflow-y:auto">Loading...</div>
@@ -726,8 +787,10 @@
 
                 <!-- Calendar Section -->
                 <div class="card">
-                    <h3>Calendar (Agenda) <button class="btn-sm" onclick="loadEvents()" style="margin-left:8px">Refresh</button></h3>
-                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Calendar events. Say "plan een afspraak..." or "schedule..." during a call to add events via voice.</p>
+                    <h3>Calendar (Agenda) <button class="btn-sm" onclick="loadEvents()"
+                            style="margin-left:8px">Refresh</button></h3>
+                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Calendar events. Say "plan een afspraak..."
+                        or "schedule..." during a call to add events via voice.</p>
                     <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
                         <input id="event-title" placeholder="Event title">
                         <div class="flex">
@@ -738,25 +801,6 @@
                         <button class="btn-success btn-sm" onclick="addEvent()">Add Event</button>
                     </div>
                     <div id="events-list" style="max-height:400px;overflow-y:auto">Loading...</div>
-                </div>
-            </div>
-
-            <!-- Media Section -->
-            <div class="card mt-2">
-                <h3>Media Player <button class="btn-sm" onclick="loadMediaStatus()" style="margin-left:8px">Refresh</button></h3>
-                <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Control media playback via Home Assistant. Say "speel muziek" or "play music" during a call. Requires the Home Assistant plugin to be active.</p>
-                <div id="media-status" style="margin-bottom:10px">Loading...</div>
-                <div id="media-controls" style="display:none">
-                    <div style="display:flex;gap:6px;flex-wrap:wrap">
-                        <button class="btn-sm" onclick="mediaCommand('previous')">&#9198; Previous</button>
-                        <button class="btn-sm btn-success" onclick="mediaCommand('play')">&#9654; Play</button>
-                        <button class="btn-sm" onclick="mediaCommand('pause')">&#9208; Pause</button>
-                        <button class="btn-sm btn-danger" onclick="mediaCommand('stop')">&#9632; Stop</button>
-                        <button class="btn-sm" onclick="mediaCommand('next')">&#9197; Next</button>
-                        <span style="width:16px"></span>
-                        <button class="btn-sm" onclick="mediaCommand('volume_down')">&#128265; Vol-</button>
-                        <button class="btn-sm" onclick="mediaCommand('volume_up')">&#128266; Vol+</button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -894,7 +938,7 @@
         async function sipReregister() {
             const r = await fetch('/api/system/sip/reregister', { method: 'POST' });
             const d = await r.json();
-            alert(d.message || d.error);
+            toast(d.message || d.error, d.error ? 'error' : 'success');
         }
 
         // ==================== Tests ====================
@@ -965,52 +1009,81 @@
         }
 
         // ==================== Config ====================
+        let _configOriginal = {}; // track original values to detect changes
+
         async function loadConfig() {
             try {
                 const data = await fetch('/api/config/').then(r => r.json());
-                const tbody = document.getElementById('config-body');
-                tbody.innerHTML = data.map(c => {
-                    if (c.key.toLowerCase() === 'monitoring_servers') {
+                _configOriginal = {};
+
+                // Group items by their group field, preserving API order
+                const groups = [];
+                const groupMap = {};
+                data.forEach(c => {
+                    const g = c.group || 'OTHER';
+                    if (!groupMap[g]) {
+                        groupMap[g] = [];
+                        groups.push(g);
+                    }
+                    groupMap[g].push(c);
+                });
+
+                const container = document.getElementById('config-groups');
+                container.innerHTML = groups.map(g => {
+                    const items = groupMap[g];
+                    const rows = items.map(c => {
+                        const displayValue = c.sensitive ? '********' : (c.value || c.default || 'none');
+                        const placeholder = c.default || 'none';
+                        _configOriginal[c.key] = displayValue;
                         return `<tr>
-                                <td style="font-family:monospace;font-size:0.8rem;color:#38bdf8">${esc(c.key)}</td>
-                                <td><textarea class="cfg-input" data-key="${esc(c.key)}" rows="4" style="width:250px">${esc(JSON.stringify(JSON.parse(c.value), null, 2))}</textarea></td>
-                                <td>${c.hot_reload ? '<span class="badge on">Hot</span>' : c.needs_restart ? '<span class="badge off">Restart</span>' : ''}</td>
-                                <td><button class="btn-sm" onclick="saveConfig(this.dataset.key)" data-key="${esc(c.key)}">Save</button></td>
-                            </tr>`;
-                    }
-                    if (c.sensitive) {
-                        c.value = '********';
-                    }
-                    return `<tr>
-                        <td style="font-family:monospace;font-size:0.8rem;color:#38bdf8">${esc(c.key)}</td>
-                        <td><input class="cfg-input" data-key="${esc(c.key)}" value="${esc(c.value)}"
-                            ${c.sensitive ? 'type="password"' : ''} style="width:250px"></td>
-                        <td>${c.hot_reload ? '<span class="badge on">Hot</span>' : c.needs_restart ? '<span class="badge off">Restart</span>' : ''}</td>
-                        <td><button class="btn-sm" onclick="saveConfig(this.dataset.key)" data-key="${esc(c.key)}">Save</button></td>
-                    </tr>`;
+                            <td style="font-family:monospace;font-size:0.8rem;color:#38bdf8;width:260px;white-space:nowrap">${esc(c.key)}</td>
+                            <td style="width:100%"><input class="cfg-input" data-key="${esc(c.key)}" value="${esc(displayValue)}"
+                                placeholder="${esc(placeholder)}"
+                                ${c.sensitive ? 'type="password"' : ''} style="width:100%"></td>
+                        </tr>`;
+                    }).join('');
+                    return `<div class="card mb-1">
+                        <h3>${esc(g)}</h3>
+                        <table style="table-layout:fixed;width:100%">
+                            <colgroup><col style="width:260px"><col></colgroup>
+                            <thead><tr><th>Key</th><th>Value</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                    </div>`;
                 }).join('');
             } catch (e) { console.error('Config load error:', e); }
         }
 
-        async function saveConfig(key) {
-            const input = document.querySelector(`input[data-key="${key}"]`);
-            if (!input) return;
+        async function saveAllConfig() {
+            const inputs = document.querySelectorAll('.cfg-input');
+            const items = [];
+            inputs.forEach(input => {
+                const key = input.dataset.key;
+                const value = input.value;
+                if (key && value !== '********' && value !== _configOriginal[key]) {
+                    items.push({ key, value });
+                }
+            });
+            if (!items.length) { toast('No changes to save.', 'info'); return; }
             try {
-                const r = await fetch('/api/config/', {
+                const r = await fetch('/api/config/bulk', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key, value: input.value }),
+                    body: JSON.stringify({ items }),
                 });
                 const d = await r.json();
-                if (d.needs_restart) alert(`Saved. "${key}" requires container restart to take effect.`);
-                else if (d.hot_reloaded) input.style.borderColor = '#22c55e';
-            } catch (e) { alert('Save failed: ' + e); }
-        }
-
-        async function reloadConfig() {
-            await fetch('/api/config/reload', { method: 'POST' });
-            loadConfig();
-            alert('Configuration reloaded');
+                if (d.success) {
+                    // Update originals to reflect saved state
+                    items.forEach(i => { _configOriginal[i.key] = i.value; });
+                    if (d.needs_restart) {
+                        toast(`${d.saved} setting(s) saved. Some require a container restart.`, 'warning');
+                    } else {
+                        toast(`${d.saved} setting(s) saved.`, 'success');
+                    }
+                } else {
+                    toast('Save failed: ' + (d.error || 'Unknown error'), 'error');
+                }
+            } catch (e) { toast('Save failed: ' + e, 'error'); }
         }
 
         // Built-in integrations (not plugins)
@@ -1073,9 +1146,10 @@
             try {
                 const r = await fetch('/api/models/ollama/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
                 const d = await r.json();
-                if (d.error) alert(d.error);
+                if (d.error) toast(d.error, 'error');
+                else toast('Model deleted', 'success');
                 loadOllamaModels();
-            } catch (e) { alert('Delete failed: ' + e); }
+            } catch (e) { toast('Delete failed: ' + e, 'error'); }
         }
 
         async function loadTTSVoices() {
@@ -1112,7 +1186,7 @@
         async function switchTTS(lang, file) {
             const r = await fetch('/api/models/tts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language: lang, voice_file: file }) });
             const d = await r.json();
-            if (d.note) alert(d.note);
+            if (d.note) toast(d.note, 'info');
             loadTTSVoices();
         }
 
@@ -1168,7 +1242,7 @@
         function playRecording(id) {
             const url = `/api/calls/${id}/recording`;
             const audio = new Audio(url);
-            audio.play().catch(e => alert('Playback failed: ' + e));
+            audio.play().catch(e => toast('Playback failed: ' + e, 'error'));
         }
 
         // ==================== System ====================
@@ -1273,6 +1347,18 @@
 
         // ==================== Helpers ====================
         function esc(s) { if (!s && s !== 0) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+        function toast(message, type = 'info', duration = 3500) {
+            const container = document.getElementById('toast-container');
+            const el = document.createElement('div');
+            el.className = `toast ${type}`;
+            el.textContent = message;
+            container.appendChild(el);
+            setTimeout(() => {
+                el.classList.add('fade-out');
+                setTimeout(() => el.remove(), 300);
+            }, duration);
+        }
 
         function setBar(id, pct) {
             const el = document.getElementById(id);
@@ -1407,9 +1493,10 @@
                 const action = enable ? 'enable' : 'disable';
                 const r = await fetch(`/api/plugins/${name}/${action}`, { method: 'POST' });
                 const d = await r.json();
-                if (d.error) alert(d.error);
+                if (d.error) toast(d.error, 'error');
+                else toast(`Plugin ${enable ? 'enabled' : 'disabled'}`, 'success');
                 loadPlugins();
-            } catch (e) { alert('Failed: ' + e); }
+            } catch (e) { toast('Failed: ' + e, 'error'); }
         }
 
         async function testPlugin(name) {
@@ -1417,11 +1504,11 @@
                 const r = await fetch(`/api/plugins/${name}/test`, { method: 'POST' });
                 const d = await r.json();
                 if (d.success) {
-                    alert(`${name}: Connection OK`);
+                    toast(`${name}: Connection OK`, 'success');
                 } else {
-                    alert(`${name}: Connection FAILED` + (d.error ? '\n' + d.error : ''));
+                    toast(`${name}: Connection FAILED` + (d.error ? ' - ' + d.error : ''), 'error');
                 }
-            } catch (e) { alert('Test failed: ' + e); }
+            } catch (e) { toast('Test failed: ' + e, 'error'); }
         }
 
         async function installPluginFromGithub() {
@@ -1455,9 +1542,10 @@
             try {
                 const r = await fetch(`/api/plugins/${name}/uninstall`, { method: 'POST' });
                 const d = await r.json();
-                if (d.error) alert(d.error);
+                if (d.error) toast(d.error, 'error');
+                else toast(`Plugin "${displayName}" uninstalled`, 'success');
                 loadPlugins();
-            } catch (e) { alert('Uninstall failed: ' + e); }
+            } catch (e) { toast('Uninstall failed: ' + e, 'error'); }
         }
 
         async function savePluginField(key, directValue) {
@@ -1470,9 +1558,9 @@
                     body: JSON.stringify({ key, value }),
                 });
                 const d = await r.json();
-                if (d.needs_restart) alert(`"${key}" requires container restart.`);
-                else if (el) el.style.borderColor = '#22c55e';
-            } catch (e) { alert('Save failed: ' + e); }
+                if (d.needs_restart) toast(`"${key}" saved. Requires container restart.`, 'warning');
+                else { toast('Saved', 'success'); if (el) el.style.borderColor = '#22c55e'; }
+            } catch (e) { toast('Save failed: ' + e, 'error'); }
         }
 
         // ==================== Data: Notes & Calendar ====================
@@ -1541,7 +1629,7 @@
             const date = document.getElementById('event-date').value;
             const time = document.getElementById('event-time').value;
             const description = document.getElementById('event-desc').value.trim();
-            if (!title || !date) { alert('Title and date are required'); return; }
+            if (!title || !date) { toast('Title and date are required', 'warning'); return; }
             await fetch('/api/data/events', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1581,8 +1669,8 @@
             try {
                 const r = await fetch('/api/data/media/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: cmd }) });
                 const d = await r.json();
-                if (d.error) alert(d.error);
-            } catch (e) { alert('Media command failed: ' + e); }
+                if (d.error) toast(d.error, 'error');
+            } catch (e) { toast('Media command failed: ' + e, 'error'); }
         }
 
         // ==================== Transcript Download ====================
@@ -1642,7 +1730,7 @@
                 fields: [
                     { key: 'TTS_VOICE_NL', label: 'Dutch Voice File', placeholder: '/app/voices/nl_voice.onnx' },
                     { key: 'TTS_VOICE_EN', label: 'English Voice File', placeholder: '/app/voices/en_voice.onnx' },
-                    { key: 'ASSISTANT_NAME', label: 'Assistant Name', placeholder: 'ClaudeViool' },
+                    { key: 'ASSISTANT_NAME', label: 'Assistant Name', placeholder: 'ClaudePhone' },
                 ]
             },
             {
@@ -1733,7 +1821,7 @@
                 });
                 document.getElementById('setup-wizard').style.display = 'none';
             } catch (e) {
-                alert('Setup failed: ' + e);
+                toast('Setup failed: ' + e, 'error');
             }
             btn.textContent = 'Done';
             btn.disabled = false;

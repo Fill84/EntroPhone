@@ -15,15 +15,17 @@ def index():
 
 @main_bp.route("/health")
 def health():
-    from .app import get_agent, get_callback_queue
+    from .app import get_agent, get_callback_queue, get_db
     agent = get_agent()
     cq = get_callback_queue()
+    db = get_db()
 
     status = {
-        "status": "ok",
+        "status": "ok" if agent else "setup",
         "sip_registered": False,
         "in_call": False,
         "callbacks_pending": 0,
+        "setup_complete": db.is_setup_complete() if db else False,
     }
 
     if agent and agent.account:
@@ -38,11 +40,14 @@ def health():
 
 @main_bp.route("/api/status")
 def api_status():
-    from .app import get_agent, get_callback_queue
+    from .app import get_agent, get_callback_queue, get_db
     agent = get_agent()
     cq = get_callback_queue()
+    db = get_db()
 
     status = {
+        "setup_complete": db.is_setup_complete() if db else False,
+        "agent_ready": agent is not None,
         "sip": {
             "registered": False,
             "in_call": False,
@@ -106,9 +111,8 @@ def api_clear_callbacks():
 @main_bp.route("/api/setup/status")
 def setup_status():
     """Check if initial setup has been completed."""
-    from .app import get_agent
-    agent = get_agent()
-    db = getattr(agent, '_db', None) if agent else None
+    from .app import get_db
+    db = get_db()
     if db:
         return jsonify({"setup_complete": db.is_setup_complete()})
     return jsonify({"setup_complete": False})
@@ -116,23 +120,24 @@ def setup_status():
 
 @main_bp.route("/api/setup/complete", methods=["POST"])
 def setup_complete():
-    """Mark setup as complete and save initial configuration."""
-    from .app import get_agent
-    agent = get_agent()
-    db = getattr(agent, '_db', None) if agent else None
+    """Mark setup as complete and save initial configuration to DB."""
+    from .app import get_db, signal_setup_complete
+    db = get_db()
     if not db:
         return jsonify({"error": "Database not available"}), 503
 
     data = request.json or {}
 
-    # Save setup values to .env via the config API
+    # Save setup values to DB AND .env
     if data.get("config"):
         from .api_config import _update_env_file
         for key, value in data["config"].items():
             if value:
+                db.set_setting(key, value)
                 _update_env_file(key, value)
 
     db.mark_setup_complete()
+    signal_setup_complete()
     return jsonify({"success": True})
 
 
@@ -156,7 +161,6 @@ def _get_integration_details(agent) -> list:
     builtin_defs = {
         "calendar": {"label": "Calendar (Agenda)", "config_keys": []},
         "notes": {"label": "Notes (Notities)", "config_keys": []},
-        "media": {"label": "Media Player", "config_keys": []},
     }
 
     for key, defn in builtin_defs.items():

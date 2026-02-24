@@ -11,7 +11,7 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
-def _build_system_prompt(lang: str, assistant_name: str = "ClaudeViool") -> str:
+def _build_system_prompt(lang: str, assistant_name: str = "ClaudePhone") -> str:
     """Build language-specific system prompt with assistant identity."""
     lang_label = "Nederlands" if lang == "nl" else "English"
     if lang == "nl":
@@ -42,7 +42,7 @@ def _build_system_prompt(lang: str, assistant_name: str = "ClaudeViool") -> str:
 class ConversationManager:
     """Manages conversation history and context for a single call."""
 
-    def __init__(self, max_history: int = 20, assistant_name: str = "ClaudeViool"):
+    def __init__(self, max_history: int = 20, assistant_name: str = "ClaudePhone"):
         self.max_history = max_history
         self.assistant_name = assistant_name
         self.history: List[dict] = []
