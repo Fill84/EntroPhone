@@ -13,10 +13,27 @@ Plugins extend ClaudePhone with new capabilities that users can trigger via voic
 
 ## Quick Start
 
-Create a file named `plugin_example.py` in `src/plugins/`:
+Create a plugin package directory in `src/plugins/`:
+
+```
+src/plugins/
+  example/
+    __init__.py
+    example.py
+```
+
+**`__init__.py`** — exports your plugin class:
 
 ```python
-from src.plugins.base import PluginBase, PluginMeta, ConfigField
+from .example import ExamplePlugin
+
+__all__ = ["ExamplePlugin"]
+```
+
+**`example.py`** — your plugin implementation:
+
+```python
+from ..base import PluginBase, PluginMeta
 
 
 class ExamplePlugin(PluginBase):
@@ -46,9 +63,29 @@ class ExamplePlugin(PluginBase):
         )
 ```
 
-That's it! Place the file in `src/plugins/` and restart the container. The plugin will be auto-discovered.
+Restart the container and the plugin will be auto-discovered.
 
-## Plugin Structure
+## Plugin Directory Structure
+
+Every plugin must be a **package directory** inside `src/plugins/`:
+
+```
+src/plugins/
+  myplugin/
+    __init__.py      # Required — exports your PluginBase subclass
+    myplugin.py      # Main plugin class
+    README.md        # Optional documentation
+```
+
+Rules:
+- Must contain an `__init__.py` that exports a `PluginBase` subclass
+- Directories starting with `_` are ignored
+- Single `.py` files in `src/plugins/` are **not supported** (they will be ignored with a warning)
+- Core files (`base.py`, `manager.py`, `context.py`) are part of the plugin system and cannot be overridden
+
+For a full reference implementation with multiple modules, dashboard widgets, and custom API routes, see the `homeassistant/` plugin.
+
+## Plugin Interface
 
 ### Required: `meta` property
 
@@ -102,9 +139,13 @@ The `_msg(en, nl, language)` helper selects the correct language automatically.
 
 ### Configuration Fields
 
-Define `.env` variables your plugin needs:
+Define configuration variables your plugin needs:
 
 ```python
+from ..base import PluginBase, PluginMeta, ConfigField
+
+# ...
+
 @property
 def config_schema(self) -> list:
     return [
@@ -135,7 +176,7 @@ def config_schema(self) -> list:
 **ConfigField options:**
 | Field | Type | Description |
 |-------|------|-------------|
-| `key` | str | The `.env` variable name |
+| `key` | str | The configuration variable name |
 | `label` | str | Display label in dashboard |
 | `required` | bool | Whether the field must have a value |
 | `default` | str | Default value |
@@ -153,7 +194,7 @@ def enabled_env_key(self) -> str:
     return "MYPLUGIN_ENABLED"
 ```
 
-If set, the plugin is only enabled when this `.env` key is `true`/`1`/`yes`/`on`.
+If set, the plugin is only enabled when this key is `true`/`1`/`yes`/`on`.
 If not set (returns `None`), the plugin is always enabled when installed.
 
 ### Category Menus
@@ -223,7 +264,7 @@ def create_tables(self, db) -> None:
 ```python
 def setup(self, context) -> None:
     """Called once when plugin is loaded. Receive core services."""
-    self.context = context  # Always call super or set self.context
+    super().setup(context)  # Sets self.context
     # Access services: context.db, context.ollama, context.tts, etc.
 
 def on_enable(self) -> None:
@@ -233,6 +274,61 @@ def on_enable(self) -> None:
 def on_disable(self) -> None:
     """Called when plugin transitions to disabled state."""
     # Clean up connections, stop background tasks, etc.
+```
+
+### Custom API Routes
+
+Plugins can register custom Flask routes:
+
+```python
+def register_routes(self):
+    from flask import Blueprint, jsonify
+
+    bp = Blueprint(f"plugin_{self.meta.name}", __name__)
+
+    @bp.route("/status")
+    def status():
+        return jsonify({"ok": True})
+
+    return bp
+```
+
+Routes are mounted at `/api/plugins/<plugin_name>/`.
+
+### Dashboard Widgets and Pages
+
+Plugins can provide dashboard UI:
+
+```python
+from ..base import DashboardWidget, DashboardPage
+
+@property
+def dashboard_widgets(self) -> list:
+    return [
+        DashboardWidget(
+            id="my-status",
+            title="My Plugin",
+            icon="...",
+            size="small",   # small, medium, large
+            order=50,       # lower = earlier
+        ),
+    ]
+
+@property
+def dashboard_pages(self) -> list:
+    return [
+        DashboardPage(id="settings", title="Settings", type="config"),
+    ]
+
+def render_widget(self, widget_id: str) -> str:
+    if widget_id == "my-status":
+        return "<div>Widget HTML here</div>"
+    return ""
+
+def render_page(self, page_id: str) -> str:
+    if page_id == "settings":
+        return "<div>Page HTML here</div>"
+    return ""
 ```
 
 ## Plugin Context
@@ -246,59 +342,74 @@ self.context.tts          # Text-to-speech engine
 self.context.callback_queue  # Queue for outgoing calls
 self.context.call_logger  # Call history logger
 self.context.config       # Full configuration dict
-self.context.get_env("KEY")           # Get environment variable
-self.context.get_env_bool("KEY")      # Get boolean env variable
+self.context.get_env("KEY")           # Get configuration value (DB > env)
+self.context.get_env_bool("KEY")      # Get boolean config value
+self.context.set_env("KEY", "value")  # Persist to DB and environment
 ```
-
-## File Naming
-
-- Single-file plugins: `plugin_yourname.py`
-- Package plugins: `yourname/__init__.py` (directory in `src/plugins/`)
-- Files starting with `_` are ignored
-- Files named `__init__.py`, `base.py`, `context.py`, `manager.py` are skipped
 
 ## Installation Methods
 
 ### Manual
-Copy your plugin file to `src/plugins/` and restart the container.
+Copy your plugin directory to `src/plugins/` and restart the container.
 
 ### Via Dashboard
 Use the "Install from GitHub" feature on the Plugins tab:
 1. Enter your GitHub repository URL
 2. Click "Install"
-3. The plugin is downloaded, installed, and loaded automatically
+3. The plugin is downloaded, validated, and loaded automatically
 
 ### GitHub Repository Structure
 
-For the GitHub installer to find your plugin, structure your repo like this:
+For the GitHub installer to find your plugin:
 
+**Root is the plugin package (recommended):**
 ```
 my-plugin-repo/
-├── plugin_myplugin.py    # Plugin file at root (preferred)
-├── README.md
-└── LICENSE
+  __init__.py
+  myplugin.py
+  README.md
 ```
 
-Or with a src/plugins directory:
+**Plugin in a subdirectory:**
 ```
 my-plugin-repo/
-├── src/
-│   └── plugins/
-│       └── plugin_myplugin.py
-├── README.md
-└── LICENSE
+  myplugin/
+    __init__.py
+    myplugin.py
+  README.md
 ```
 
-Plugin files must be named `plugin_*.py` to be detected.
+The GitHub installer can also wrap single `.py` files automatically, but for local development plugins must be package directories.
 
 ## Complete Example: Weather Plugin
+
+### Directory structure
+
+```
+src/plugins/
+  weather/
+    __init__.py
+    weather.py
+```
+
+### `__init__.py`
+
+```python
+from .weather import WeatherPlugin
+
+__all__ = ["WeatherPlugin"]
+```
+
+### `weather.py`
 
 ```python
 """Weather plugin - provides weather information via OpenWeatherMap API."""
 
 import logging
+
 import requests
-from src.plugins.base import PluginBase, PluginMeta, ConfigField
+
+from ..base import PluginBase, PluginMeta, ConfigField
 
 logger = logging.getLogger(__name__)
 
@@ -419,4 +530,6 @@ class WeatherPlugin(PluginBase):
 - Handle errors gracefully — return a friendly message, never crash
 - Use `logger = logging.getLogger(__name__)` for logging
 - Test your `test_connection()` — it's called during plugin load
-- Access environment variables via `self.context.get_env("KEY")` in lifecycle hooks
+- Access configuration via `self.context.get_env("KEY")` in lifecycle hooks
+- Use relative imports (`from ..base import ...`) within your plugin package
+- See the `homeassistant/` plugin for a complex real-world example with multiple modules, dashboard widgets, and custom API routes

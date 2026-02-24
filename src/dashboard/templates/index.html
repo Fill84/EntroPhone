@@ -1635,7 +1635,7 @@
                         `<a href="/plugins/${esc(p.name)}/${esc(pg.id)}" onclick="event.preventDefault();navigate('/plugins/${esc(p.name)}/${esc(pg.id)}')"
                                 class="btn btn-sm" style="text-decoration:none;display:inline-block">${pg.icon ? esc(pg.icon) + ' ' : ''}${esc(pg.title)}</a>`
                     ).join('')}</div>` : ''}
-                        ${configHtml}
+                        ${(p.pages && p.pages.some(pg => pg.type === 'config')) ? '' : configHtml}
                     </div>`;
                 }).join('');
             } catch (e) {
