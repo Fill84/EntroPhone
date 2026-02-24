@@ -195,7 +195,7 @@ class PluginManager:
             return False, ["Missing __init__.py in plugin directory"]
 
         # Try to load the module
-        module_name = f"_validate_.{plugin_dir.name}"
+        module_name = f"src.plugins.{plugin_dir.name}"
         try:
             spec = importlib.util.spec_from_file_location(
                 module_name, init_file,
@@ -206,8 +206,11 @@ class PluginManager:
         except Exception as e:
             return False, [f"Failed to load plugin module: {e}"]
         finally:
-            # Clean up temp module
-            sys.modules.pop(module_name, None)
+            # Clean up all submodules (e.g. src.plugins.plugin_xxx.weather)
+            prefix = f"{module_name}."
+            for key in [k for k in sys.modules
+                        if k == module_name or k.startswith(prefix)]:
+                sys.modules.pop(key, None)
 
         # Find PluginBase subclass
         plugin_cls = self._find_plugin_class(module)
