@@ -1,3 +1,3 @@
 """ClaudePhone plugin system."""
 
-from .base import ConfigField, DashboardPage, PluginBase, PluginMeta  # noqa: F401
+from .base import ConfigField, DashboardPage, DashboardWidget, PluginBase, PluginMeta  # noqa: F401

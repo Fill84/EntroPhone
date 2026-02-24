@@ -609,6 +609,9 @@
                 </div>
             </div>
 
+            <!-- Plugin Widgets -->
+            <div class="grid mt-2" id="plugin-widgets"></div>
+
             <div class="card mt-2">
                 <h3>Callback Queue (<span id="cb-count">0</span>)</h3>
                 <table>
@@ -963,6 +966,7 @@
         }
 
         function loadTabData(tab) {
+            if (tab === 'overview') { if (!_widgetsLoaded) loadPluginWidgets(); }
             if (tab === 'config') loadConfig();
             if (tab === 'plugins') loadPlugins();
             if (tab === 'models') { loadOllamaModels(); loadTTSVoices(); }
@@ -1050,6 +1054,49 @@
         }
 
         async function clearCallbacks() { await fetch('/api/callbacks/clear', { method: 'POST' }); refreshOverview(); }
+
+        // ==================== Plugin Widgets ====================
+        let _widgetsLoaded = false;
+
+        async function loadPluginWidgets() {
+            try {
+                const widgets = await fetch('/api/plugins/widgets').then(r => r.json());
+                const container = document.getElementById('plugin-widgets');
+                if (!widgets.length) {
+                    container.innerHTML = '';
+                    return;
+                }
+
+                // Create placeholder cards
+                container.innerHTML = widgets.map(w => {
+                    const sizeClass = w.size === 'large' ? 'style="grid-column: span 2"' : '';
+                    return `<div class="card" ${sizeClass} id="widget-${esc(w.plugin)}-${esc(w.id)}">
+                        <h3>${w.icon ? w.icon + ' ' : ''}${esc(w.title)}</h3>
+                        <div class="widget-content" style="color:#64748b">Loading...</div>
+                    </div>`;
+                }).join('');
+
+                // Load each widget's HTML
+                for (const w of widgets) {
+                    try {
+                        const d = await fetch(`/api/plugins/${encodeURIComponent(w.plugin)}/widgets/${encodeURIComponent(w.id)}`).then(r => r.json());
+                        const card = document.getElementById(`widget-${w.plugin}-${w.id}`);
+                        if (card && d.html) {
+                            card.querySelector('.widget-content').innerHTML = d.html;
+                            // Execute any <script> tags in the widget
+                            card.querySelectorAll('script').forEach(old => {
+                                const s = document.createElement('script');
+                                s.textContent = old.textContent;
+                                old.replaceWith(s);
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Widget load error:', w.plugin, w.id, e);
+                    }
+                }
+                _widgetsLoaded = true;
+            } catch (e) { console.error('Widgets list error:', e); }
+        }
         async function sipReregister() {
             const r = await fetch('/api/system/sip/reregister', { method: 'POST' });
             const d = await r.json();
@@ -1148,13 +1195,14 @@
                     const items = groupMap[g];
                     const rows = items.map(c => {
                         const displayValue = c.sensitive ? '********' : (c.value || c.default || 'none');
-                        const placeholder = c.default || 'none';
+                        const placeholder = c.description || c.default || 'none';
                         _configOriginal[c.key] = displayValue;
+                        const desc = c.description ? `<div style="font-size:0.7rem;color:#64748b;margin-top:2px">${esc(c.description)}</div>` : '';
                         return `<tr>
-                            <td style="font-family:monospace;font-size:0.8rem;color:#38bdf8;width:260px;white-space:nowrap">${esc(c.key)}</td>
+                            <td style="font-family:monospace;font-size:0.8rem;color:#38bdf8;width:260px;white-space:nowrap" title="${esc(c.description || c.key)}">${esc(c.key)}</td>
                             <td style="width:100%"><input class="cfg-input" data-key="${esc(c.key)}" value="${esc(displayValue)}"
                                 placeholder="${esc(placeholder)}"
-                                ${c.sensitive ? 'type="password"' : ''} style="width:100%"></td>
+                                ${c.sensitive ? 'type="password"' : ''} style="width:100%">${desc}</td>
                         </tr>`;
                     }).join('');
                     return `<div class="card mb-1">
@@ -1587,7 +1635,7 @@
                         `<a href="/plugins/${esc(p.name)}/${esc(pg.id)}" onclick="event.preventDefault();navigate('/plugins/${esc(p.name)}/${esc(pg.id)}')"
                                 class="btn btn-sm" style="text-decoration:none;display:inline-block">${pg.icon ? esc(pg.icon) + ' ' : ''}${esc(pg.title)}</a>`
                     ).join('')}</div>` : ''}
-                        ${configHtml}
+                        ${(p.pages && p.pages.some(pg => pg.type === 'config')) ? '' : configHtml}
                     </div>`;
                 }).join('');
             } catch (e) {
@@ -1950,6 +1998,7 @@
         checkSetup();
         handleRoute(); // activate the correct tab based on current URL
         refreshOverview();
+        loadPluginWidgets();
         setInterval(refreshOverview, 5000);
     </script>
 </body>

@@ -10,6 +10,36 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
+# ── Centralized paths ──────────────────────────────────────────────
+# All file-system paths used across the project. Override via environment
+# variables for development outside Docker.
+
+APP_ROOT = Path(os.environ.get("APP_ROOT", "/app"))
+
+PATHS = {
+    "app_root":       APP_ROOT,
+    "logs_dir":       APP_ROOT / "logs",
+    "log_file":       APP_ROOT / "logs" / "claudephone.log",
+    "pjsip_log":      APP_ROOT / "logs" / "pjsip.log",
+    "data_dir":       APP_ROOT / "data",
+    "db_file":        APP_ROOT / "data" / "claudephone.db",
+    "audio_dir":      APP_ROOT / "audio",
+    "audio_cache":    APP_ROOT / "audio" / "cache",
+    "audio_tmp":      APP_ROOT / "audio" / "tmp",
+    "audio_recordings": APP_ROOT / "audio" / "recordings",
+    "models_dir":     APP_ROOT / "models",
+    "piper_models":   APP_ROOT / "models" / "piper",
+    "piper_bin":      APP_ROOT / "piper" / "piper",
+    "hf_cache":       APP_ROOT / "models" / "hf_cache",
+    "env_file":       APP_ROOT / ".env",
+    "callback_queue": APP_ROOT / "logs" / "callback_queue.json",
+}
+
+
+def get_path(key: str) -> Path:
+    """Get a centralized path by key. Raises KeyError if unknown."""
+    return PATHS[key]
+
 _config: Dict[str, Any] = {}
 _config_lock = threading.Lock()
 
@@ -20,6 +50,8 @@ CONFIG_KEYS = {
     "DASHBOARD_PORT":          ("dashboard", "port", int, 8080),
     # -- Assistant --
     "ASSISTANT_NAME":          ("assistant", "name", str, "ClaudePhone"),
+    "GREETING_NL":             ("assistant", "greeting_nl", str, ""),
+    "GREETING_EN":             ("assistant", "greeting_en", str, ""),
     # -- Ollama AI --
     "OLLAMA_BASE_URL":         ("ollama", "base_url", str, "http://localhost:11434"),
     "OLLAMA_MAX_TOKENS":       ("ollama", "max_tokens", int, 600),
@@ -34,6 +66,7 @@ CONFIG_KEYS = {
     "SIP_PASSWORD":            ("sip", "password", str, ""),
     "SIP_POST_ANSWER_DELAY":   ("sip", "post_answer_delay", float, 0.3),
     "SIP_PROXY":               ("sip", "proxy", str, ""),
+    "SIP_PBX_LAN_IP":          ("sip", "pbx_lan_ip", str, ""),
     "SIP_PUBLIC_IP":           ("sip", "public_ip", str, ""),
     "SIP_PUBLIC_PORT":         ("sip", "public_port", int, 5061),
     "SIP_REGISTRATION_TIMEOUT": ("sip", "registration_timeout", int, 60),
@@ -164,6 +197,7 @@ def load_config() -> Dict[str, Any]:
             "greeting_delay": _float(os.getenv("SIP_GREETING_DELAY", "1.0"), 1.0),
             "max_call_duration": _int(os.getenv("SIP_MAX_CALL_DURATION", "1800"), 1800),
             "callback_number": os.getenv("SIP_CALLBACK_NUMBER", ""),
+            "pbx_lan_ip": os.getenv("SIP_PBX_LAN_IP", ""),
             "registration_timeout": _int(os.getenv("SIP_REGISTRATION_TIMEOUT", "60"), 60),
         },
         "ollama": {
@@ -200,6 +234,8 @@ def load_config() -> Dict[str, Any]:
         },
         "assistant": {
             "name": os.getenv("ASSISTANT_NAME", "ClaudePhone"),
+            "greeting_nl": os.getenv("GREETING_NL", ""),
+            "greeting_en": os.getenv("GREETING_EN", ""),
         },
     }
 

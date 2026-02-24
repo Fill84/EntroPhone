@@ -33,6 +33,21 @@ class PluginMeta:
 
 
 @dataclass
+class DashboardWidget:
+    """A widget that a plugin can show on the dashboard overview.
+
+    The ``id`` is used to fetch the widget HTML via the API.
+    ``size`` can be "small" (1 col), "medium" (1 col, taller), or "large" (2 cols).
+    ``order`` controls the position (lower = earlier).
+    """
+    id: str
+    title: str
+    icon: str = ""
+    size: str = "small"  # small, medium, large
+    order: int = 50
+
+
+@dataclass
 class DashboardPage:
     """A dashboard page that a plugin provides.
 
@@ -106,6 +121,23 @@ class PluginBase(ABC):
         """
         return []
 
+    @property
+    def dashboard_widgets(self) -> List["DashboardWidget"]:
+        """Widgets this plugin provides for the dashboard overview.
+
+        Override to add compact status cards, controls, etc. to the
+        main overview page.
+        """
+        return []
+
+    def render_widget(self, widget_id: str) -> str:
+        """Return HTML content for a plugin dashboard widget.
+
+        Override this to provide custom widget content. The returned HTML
+        is inserted into a card on the overview page.
+        """
+        return ""
+
     def render_page(self, page_id: str) -> str:
         """Return HTML content for a plugin dashboard page.
 
@@ -143,6 +175,27 @@ class PluginBase(ABC):
     def test_connection(self) -> bool:
         """Test if the plugin's external service is reachable."""
         return True
+
+    def register_routes(self) -> Optional["Blueprint"]:
+        """Return a Flask Blueprint with custom API routes for this plugin.
+
+        The blueprint will be mounted at ``/api/plugins/<plugin_name>/``.
+        Override this to add plugin-specific endpoints.
+
+        Example::
+
+            from flask import Blueprint, jsonify
+
+            def register_routes(self):
+                bp = Blueprint(f"plugin_{self.meta.name}", __name__)
+
+                @bp.route("/my-endpoint", methods=["POST"])
+                def my_endpoint():
+                    return jsonify({"ok": True})
+
+                return bp
+        """
+        return None
 
     # --- Helpers ---
 

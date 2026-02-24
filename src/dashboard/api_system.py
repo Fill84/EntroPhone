@@ -7,6 +7,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from ..config import get_path
+
 logger = logging.getLogger(__name__)
 
 system_bp = Blueprint("system", __name__)
@@ -51,7 +53,7 @@ def get_resources():
 @system_bp.route("/logs")
 def get_logs():
     """Get recent log lines."""
-    log_file = Path("/app/logs/claudephone.log")
+    log_file = get_path("log_file")
     lines = request.args.get("lines", 100, type=int)
     search = request.args.get("search", "")
 
@@ -93,8 +95,8 @@ def sip_reregister():
 @system_bp.route("/cache")
 def get_cache_info():
     """Get TTS cache information."""
-    cache_dir = Path("/app/audio/cache")
-    tmp_dir = Path("/app/audio/tmp")
+    cache_dir = get_path("audio_cache")
+    tmp_dir = get_path("audio_tmp")
 
     cache_files = list(cache_dir.glob("*.wav")) if cache_dir.exists() else []
     tmp_files = list(tmp_dir.glob("*")) if tmp_dir.exists() else []
@@ -128,7 +130,7 @@ def clear_cache():
     cleared = {"cache": 0, "tmp": 0}
 
     if clear_cache:
-        cache_dir = Path("/app/audio/cache")
+        cache_dir = get_path("audio_cache")
         if cache_dir.exists():
             for f in cache_dir.glob("*.wav"):
                 try:
@@ -143,7 +145,7 @@ def clear_cache():
             agent.tts._cache.clear()
 
     if clear_tmp:
-        tmp_dir = Path("/app/audio/tmp")
+        tmp_dir = get_path("audio_tmp")
         if tmp_dir.exists():
             for f in tmp_dir.glob("*"):
                 try:

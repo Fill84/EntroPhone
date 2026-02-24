@@ -30,3 +30,9 @@ class PluginContext:
         """Get a boolean environment variable."""
         val = self.get_env(key, str(default)).lower()
         return val in ("true", "1", "yes", "on")
+
+    def set_env(self, key: str, value: str) -> None:
+        """Persist a configuration value to the database and environment."""
+        if self.db:
+            self.db.set_setting(key, value)
+        os.environ[key] = value

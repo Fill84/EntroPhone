@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import tempfile
+import threading
 import uuid
 import zipfile
 from pathlib import Path
@@ -25,6 +26,55 @@ def _get_pm():
     if agent:
         return getattr(agent, '_plugin_manager', None)
     return None
+
+
+_plugin_routes_registered = set()
+_plugin_routes_init_done = False
+_plugin_routes_lock = threading.Lock()
+
+
+def register_plugin_routes(app=None, pm=None):
+    """Register all plugin-provided Flask Blueprints on the app.
+
+    Each plugin's blueprint is mounted at ``/api/plugins/<plugin_name>/``.
+    Can be called explicitly or is called lazily on first request.
+    Safe to call multiple times - already registered plugins are skipped.
+    """
+    global _plugin_routes_init_done
+
+    with _plugin_routes_lock:
+        if pm is None:
+            pm = _get_pm()
+        if pm is None:
+            return
+        if app is None:
+            from .app import get_flask_app
+            app = get_flask_app()
+        if app is None:
+            return
+
+        blueprints = pm.get_plugin_blueprints()
+        for name, bp in blueprints.items():
+            if name in _plugin_routes_registered:
+                continue
+            prefix = f"/api/plugins/{name}"
+            try:
+                app.register_blueprint(bp, url_prefix=prefix)
+                _plugin_routes_registered.add(name)
+                logger.info("Registered plugin routes: %s -> %s", name, prefix)
+            except Exception as e:
+                logger.error(
+                    "Failed to register routes for plugin %s: %s", name, e)
+
+        _plugin_routes_init_done = True
+
+
+@plugins_bp.before_app_request
+def _ensure_plugin_routes():
+    """Lazily register plugin routes on first API request if not done yet."""
+    if _plugin_routes_init_done:
+        return
+    register_plugin_routes()
 
 
 @plugins_bp.route("/")
@@ -330,6 +380,62 @@ def uninstall_plugin(name):
     return jsonify({"success": True, "file_deleted": deleted_file})
 
 
+@plugins_bp.route("/widgets")
+def all_plugin_widgets():
+    """List all widgets from all enabled plugins for the overview."""
+    pm = _get_pm()
+    if not pm:
+        return jsonify([])
+
+    widgets = []
+    for name, plugin in pm.plugins.items():
+        if not pm.is_enabled(name):
+            continue
+        for w in plugin.dashboard_widgets:
+            widgets.append({
+                "plugin": name,
+                "plugin_display_name": plugin.meta.display_name,
+                "id": w.id,
+                "title": w.title,
+                "icon": w.icon,
+                "size": w.size,
+                "order": w.order,
+            })
+    widgets.sort(key=lambda w: w["order"])
+    return jsonify(widgets)
+
+
+@plugins_bp.route("/<name>/widgets/<widget_id>")
+def plugin_widget_render(name, widget_id):
+    """Render a specific plugin widget."""
+    pm = _get_pm()
+    if not pm:
+        return jsonify({"error": "Plugin manager not available"}), 503
+
+    plugin = pm.plugins.get(name)
+    if not plugin:
+        return jsonify({"error": "Plugin not found"}), 404
+
+    valid_ids = [w.id for w in plugin.dashboard_widgets]
+    if widget_id not in valid_ids:
+        return jsonify({"error": "Widget not found"}), 404
+
+    try:
+        html = plugin.render_widget(widget_id)
+        widget_meta = next(w for w in plugin.dashboard_widgets if w.id == widget_id)
+        return jsonify({
+            "plugin": name,
+            "widget_id": widget_id,
+            "title": widget_meta.title,
+            "icon": widget_meta.icon,
+            "size": widget_meta.size,
+            "html": html,
+        })
+    except Exception as e:
+        logger.error("Plugin widget render failed: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @plugins_bp.route("/<name>/pages")
 def plugin_pages(name):
     """List dashboard pages a plugin provides."""
@@ -385,6 +491,9 @@ def plugin_page_render(name, page_id):
 
 def _refresh_router(pm):
     """Re-register all plugin keywords in the router after enable/disable."""
+    # Register any new plugin routes (e.g. after enabling a plugin)
+    register_plugin_routes(pm=pm)
+
     from .app import get_agent
     agent = get_agent()
     if agent and agent.router:

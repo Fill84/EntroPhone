@@ -12,6 +12,8 @@ from typing import Optional
 
 import numpy as np
 
+from ..config import get_path
+
 logger = logging.getLogger(__name__)
 
 
@@ -59,7 +61,7 @@ class SileroVAD:
 
             # Look for pre-downloaded model
             model_paths = [
-                Path("/app/models/silero_vad.onnx"),
+                get_path("models_dir") / "silero_vad.onnx",
                 Path.home() / ".cache" / "silero_vad" / "silero_vad.onnx",
             ]
 

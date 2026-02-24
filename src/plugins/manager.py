@@ -396,6 +396,24 @@ class PluginManager:
             })
         return details
 
+    def get_plugin_blueprints(self) -> Dict[str, Any]:
+        """Collect Flask Blueprints from all plugins that provide routes.
+
+        Returns: {plugin_name: Blueprint} for plugins that define
+        ``register_routes()``.
+        """
+        blueprints = {}
+        for name, plugin in self._plugins.items():
+            try:
+                bp = plugin.register_routes()
+                if bp is not None:
+                    blueprints[name] = bp
+                    logger.info("Plugin %s registered custom routes", name)
+            except Exception as e:
+                logger.error("Plugin %s register_routes failed: %s",
+                             name, e, exc_info=True)
+        return blueprints
+
     def _check_configured(self, plugin: PluginBase) -> bool:
         """Check if all required config fields have values."""
         for f in plugin.config_schema:

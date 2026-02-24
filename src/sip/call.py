@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, Optional
 
 import pjsua2 as pj
 
+from ..config import get_path
+
 if TYPE_CHECKING:
     from .account import SIPAccount
 
@@ -119,21 +121,87 @@ class VoiceCall(pj.Call):
             self.account.clear_current_call()
 
     def onCallMediaState(self, prm: pj.OnCallMediaStateParam) -> None:
-        """Called when media state changes (RTP active/inactive)."""
+        """Called when media state changes (RTP active/inactive).
+
+        Also performs a NAT punch-through: sends dummy RTP to the PBX's
+        LAN IP so FreePBX learns our real address and sends RTP back via
+        the LAN instead of through the external IP (hairpin NAT).
+        """
         try:
             ci = self.getInfo()
             for i, mi in enumerate(ci.media):
                 if mi.type == pj.PJMEDIA_TYPE_AUDIO:
                     if mi.status == pj.PJSUA_CALL_MEDIA_ACTIVE:
                         aud_med = self.getAudioMedia(i)
-                        logger.info(
-                            "Audio media active (slot %d, conf_port=%d)",
-                            i, aud_med.getPortInfo().portId if aud_med else -1
-                        )
+                        port_id = aud_med.getPortInfo().portId if aud_med else -1
+                        logger.info("Audio media active (slot %d, conf_port=%d)", i, port_id)
+
+                        # NAT punch-through to PBX LAN IP
+                        self._punch_rtp_to_pbx(ci)
                     else:
                         logger.info("Audio media status: %d (slot %d)", mi.status, i)
         except Exception as e:
             logger.error("Error in onCallMediaState: %s", e)
+
+    def _punch_rtp_to_pbx(self, ci) -> None:
+        """Send dummy RTP packets to the PBX's LAN IP to bypass hairpin NAT.
+
+        When FreePBX advertises its external IP in SDP (e.g. 212.45.36.41),
+        our RTP goes through the router's NAT which often drops hairpin traffic.
+        By sending a few packets directly to FreePBX's LAN IP, we teach
+        FreePBX's symmetric RTP to route media back to us via the LAN.
+        """
+        import socket as _socket
+        config = self.account.agent.config
+        pbx_lan_ip = config["sip"].get("pbx_lan_ip", "")
+        if not pbx_lan_ip:
+            return
+
+        try:
+            # Extract remote media port from SDP
+            # The remote SDP's m=audio line has the port
+            remote_port = None
+            try:
+                si = self.getStreamInfo(0)
+                remote_port = si.remoteRtpAddress.split(":")[1] if ":" in si.remoteRtpAddress else None
+            except Exception:
+                pass
+
+            if not remote_port:
+                # Fallback: use a common RTP port range
+                remote_port = "10000"
+
+            remote_port = int(remote_port)
+            local_port = 4000  # Our RTP port
+
+            # Send dummy RTP packets from our RTP port to PBX LAN IP
+            sock = _socket.socket(_socket.AF_INET, _socket.SOCK_DGRAM)
+            sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_REUSEADDR, 1)
+            try:
+                sock.bind(('0.0.0.0', local_port))
+            except OSError:
+                # Port already bound by PJSIP — use any port, FreePBX will
+                # still learn our IP from the source address
+                pass
+
+            # Minimal RTP header (version 2, PT=0 PCMU, seq=0, ts=0, ssrc=0)
+            dummy_rtp = bytes([
+                0x80, 0x00,  # V=2, P=0, X=0, CC=0, M=0, PT=0
+                0x00, 0x00,  # Sequence number
+                0x00, 0x00, 0x00, 0x00,  # Timestamp
+                0x00, 0x00, 0x00, 0x00,  # SSRC
+            ]) + b'\x00' * 160  # 160 bytes of silence (20ms PCMU)
+
+            for _ in range(5):
+                sock.sendto(dummy_rtp, (pbx_lan_ip, remote_port))
+
+            sock.close()
+            logger.info(
+                "RTP punch-through: sent 5 packets to %s:%d (PBX LAN)",
+                pbx_lan_ip, remote_port,
+            )
+        except Exception as e:
+            logger.warning("RTP punch-through failed: %s", e)
 
     def _extract_number(self, uri: str) -> str:
         """Extract phone number from SIP URI like 'sip:1234@server'."""
@@ -226,8 +294,6 @@ class VoiceCall(pj.Call):
             logger.error("Failed to play audio %s: %s", audio_file, e)
             return False
         finally:
-            # Explicitly clean up player to free conference bridge port
-            # (don't rely on GC — stale ports cause PJ_EINVAL for recorders)
             if connected:
                 try:
                     player.stopTransmit(aud_med)
@@ -237,14 +303,14 @@ class VoiceCall(pj.Call):
                 del player
             except Exception:
                 pass
-            time.sleep(0.2)  # Conference bridge settling after port removal
+            time.sleep(0.2)
 
     def _speak(self, text: str, language: str = "en") -> bool:
         """Generate TTS and play to caller."""
         if not self.call_active or not self.tts:
             return False
 
-        audio_dir = Path("/app/audio/tmp")
+        audio_dir = get_path("audio_tmp")
         audio_dir.mkdir(parents=True, exist_ok=True)
         output_file = str(audio_dir / f"speech_{id(self)}_{int(time.time() * 1000)}.wav")
 
@@ -279,7 +345,7 @@ class VoiceCall(pj.Call):
             result = self._play_audio(audio_file)
             # Copy cached file for timeline (originals must stay in cache)
             try:
-                copy_path = f"/app/audio/tmp/cached_{id(self)}_{int(time.time()*1000)}.wav"
+                copy_path = str(get_path("audio_tmp") / f"cached_{id(self)}_{int(time.time()*1000)}.wav")
                 shutil.copy2(audio_file, copy_path)
                 self._call_timeline.append({"type": "assistant", "file": copy_path, "start": start_ts})
             except Exception:
@@ -288,35 +354,81 @@ class VoiceCall(pj.Call):
         return False
 
     def _speak_greeting(self, assistant_name: str, language: str = "nl") -> bool:
-        """Speak a personalized greeting with caller name and assistant identity."""
-        name = self.caller_name
+        """Speak a dynamic greeting using config templates.
+
+        Template variables (replaced at runtime):
+            {caller_name}    - Caller's display name (or empty string)
+            {assistant_name} - Assistant name from config
+            {plugins}        - Comma-separated list of enabled plugin names
+
+        Examples in config / env:
+            GREETING_NL="Hallo {caller_name}, ik ben {assistant_name}. Ik kan je helpen met {plugins}, of stel gewoon een vraag."
+            GREETING_EN="Hi {caller_name}, I'm {assistant_name}. I can help with {plugins}, or just ask anything."
+
+        If no template is configured, a sensible default is generated.
+        """
+        config = self.account.agent.config
+        name = self.caller_name or ""
+
+        # Build plugin list from loaded plugins
+        plugin_names = self._get_plugin_display_names(language)
+
+        # Check for configured template
+        template = ""
         if language == "nl":
-            if name:
-                greeting = (
-                    f"Hoi {name}, ik ben {assistant_name}. "
-                    "Je kunt me vragen over smart home, monitoring, agenda, "
-                    "notities, muziek, of stel gewoon een vraag."
-                )
-            else:
-                greeting = (
-                    f"Hoi, ik ben {assistant_name}. "
-                    "Je kunt me vragen over smart home, monitoring, agenda, "
-                    "notities, muziek, of stel gewoon een vraag."
-                )
+            template = config.get("assistant", {}).get("greeting_nl", "")
         else:
-            if name:
-                greeting = (
-                    f"Hi {name}, I'm {assistant_name}. "
-                    "You can ask me about smart home, monitoring, calendar, "
-                    "notes, music, or just ask a question."
-                )
-            else:
-                greeting = (
-                    f"Hi, I'm {assistant_name}. "
-                    "You can ask me about smart home, monitoring, calendar, "
-                    "notes, music, or just ask a question."
-                )
+            template = config.get("assistant", {}).get("greeting_en", "")
+
+        if template:
+            # Apply template variables
+            greeting = template.format(
+                caller_name=name,
+                assistant_name=assistant_name,
+                plugins=plugin_names,
+            ).strip()
+            # Clean up double spaces from empty caller_name
+            greeting = " ".join(greeting.split())
+        else:
+            # Generate default greeting
+            greeting = self._default_greeting(name, assistant_name, plugin_names, language)
+
         return self._speak(greeting, language)
+
+    def _get_plugin_display_names(self, language: str) -> str:
+        """Get comma-separated list of enabled plugin display names."""
+        try:
+            agent = self.account.agent
+            if not agent.integrations:
+                return ""
+            names = []
+            for key, plugin in agent.integrations.items():
+                if hasattr(plugin, 'meta'):
+                    names.append(plugin.meta.display_name)
+                else:
+                    names.append(key.replace("_", " ").title())
+            if not names:
+                return ""
+            if len(names) == 1:
+                return names[0]
+            # "A, B en C" (nl) / "A, B and C" (en)
+            joiner = " en " if language == "nl" else " and "
+            return ", ".join(names[:-1]) + joiner + names[-1]
+        except Exception:
+            return ""
+
+    def _default_greeting(self, name: str, assistant_name: str, plugins: str, language: str) -> str:
+        """Generate a default greeting when no template is configured."""
+        if language == "nl":
+            intro = f"Hoi {name}, ik ben {assistant_name}." if name else f"Hoi, ik ben {assistant_name}."
+            if plugins:
+                return f"{intro} Ik kan je helpen met {plugins}, of stel gewoon een vraag."
+            return f"{intro} Stel gerust een vraag."
+        else:
+            intro = f"Hi {name}, I'm {assistant_name}." if name else f"Hi, I'm {assistant_name}."
+            if plugins:
+                return f"{intro} I can help with {plugins}, or just ask a question."
+            return f"{intro} Feel free to ask me anything."
 
     def _speak_goodbye(self, language: str = "en") -> bool:
         """Speak a natural, time-aware goodbye with caller name."""
@@ -410,16 +522,51 @@ class VoiceCall(pj.Call):
             assistant_name = config.get("assistant", {}).get("name", "ClaudePhone")
             self._speak_greeting(assistant_name, detected_lang)
 
+            # After greeting, check if we can hear the caller.
+            # The first call after a fresh container start often has RX=0
+            # due to hairpin NAT (FreePBX sends RTP to external IP).
+            # Detect this and ask the caller to redial.
+            if self.call_active:
+                time.sleep(0.3)
+                try:
+                    si = self.getStreamStat(0)
+                    rx = si.rtcp.rxStat.pkt
+                    tx = si.rtcp.txStat.pkt
+                    if rx == 0 and tx > 100:
+                        logger.warning(
+                            "First-call NAT issue detected (RX=0, TX=%d). "
+                            "Asking caller to redial.", tx
+                        )
+                        rehear_msg = (
+                            "Sorry, ik kan je niet horen door een verbindingsprobleem. "
+                            "Kun je even opnieuw bellen? Dan werkt het wel."
+                            if detected_lang == "nl"
+                            else "Sorry, I can't hear you due to a connection issue. "
+                            "Could you call back? It will work on the next call."
+                        )
+                        self._speak(rehear_msg, detected_lang)
+                        return
+                except Exception:
+                    pass
+
             silence_cycles = 0
 
             while self.call_active:
                 # Log RTP stats before recording for diagnostics
+                rx_pkts = 0
                 try:
                     si = self.getStreamStat(0)
+                    rx_pkts = si.rtcp.rxStat.pkt
+                    tx_pkts = si.rtcp.txStat.pkt
                     logger.info(
                         "RTP stats: RX=%d pkts, TX=%d pkts",
-                        si.rtcp.rxStat.pkt, si.rtcp.txStat.pkt
+                        rx_pkts, tx_pkts
                     )
+                    if rx_pkts == 0 and tx_pkts > 0:
+                        logger.warning(
+                            "RX=0: No audio from caller! This is a network/NAT issue, "
+                            "not an STT problem. Check FreePBX RTP settings and firewall."
+                        )
                 except Exception:
                     pass
 
@@ -486,7 +633,7 @@ class VoiceCall(pj.Call):
             return
 
         try:
-            rec_dir = Path("/app/audio/recordings")
+            rec_dir = get_path("audio_recordings")
             rec_dir.mkdir(parents=True, exist_ok=True)
             output_path = str(rec_dir / f"{self._call_log_id}.wav")
 
@@ -577,7 +724,16 @@ class VoiceCall(pj.Call):
             self._handle_integration(intent, "", language)
 
     def _handle_streaming_response(self, text: str, language: str) -> None:
-        """Stream Ollama response sentence-by-sentence to TTS+playback."""
+        """Stream Ollama response sentence-by-sentence to TTS+playback.
+
+        Flow:
+        1. Immediately says "Let me think about that..." (in caller's language)
+        2. Starts Ollama generation in background
+        3. If first sentence arrives within THINKING_TIMEOUT → stream normally
+        4. If it takes too long → offer to call back with the answer
+        """
+        THINKING_TIMEOUT = 15  # seconds to wait for first sentence
+
         if not self.ollama:
             self._speak("Sorry, AI is not available right now.", language)
             return
@@ -588,21 +744,28 @@ class VoiceCall(pj.Call):
         else:
             messages = [{"role": "user", "content": text}]
 
+        # Tell the caller we're thinking
+        thinking_msg = "Even nadenken..." if language == "nl" else "Let me think about that..."
+        self._speak(thinking_msg, language)
+
         audio_queue: queue.Queue = queue.Queue()
         full_response = []
         timed_out = False
+        first_sentence_event = threading.Event()
 
         def produce():
             nonlocal timed_out
             try:
                 def on_sentence(sentence: str):
-                    full_response.append(sentence)  # Keep original for transcript
+                    full_response.append(sentence)
+                    if not first_sentence_event.is_set():
+                        first_sentence_event.set()
                     if self.tts and self.call_active:
                         from ..ai.ollama import clean_for_speech
                         clean_text = clean_for_speech(sentence)
                         if not clean_text:
                             return
-                        audio_dir = Path("/app/audio/tmp")
+                        audio_dir = get_path("audio_tmp")
                         out = str(audio_dir / f"stream_{id(self)}_{int(time.time()*1000)}.wav")
                         audio_file = self.tts.speak(clean_text, out, language=language)
                         if audio_file:
@@ -620,24 +783,52 @@ class VoiceCall(pj.Call):
         producer = threading.Thread(target=produce, daemon=True, name="ollama_stream")
         producer.start()
 
-        # Play audio files as they arrive
-        while self.call_active:
-            try:
-                audio_file = audio_queue.get(timeout=20)
-            except queue.Empty:
-                break
+        # Wait for first sentence with timeout
+        got_first = first_sentence_event.wait(timeout=THINKING_TIMEOUT)
 
-            if audio_file is None:
-                break
+        if not got_first and self.call_active:
+            # Ollama is too slow — offer callback
+            logger.info("Ollama response too slow (>%ds), offering callback", THINKING_TIMEOUT)
+            if self.callback_queue and self.caller_number:
+                # Queue the question for callback
+                self.callback_queue.add(self.caller_number, text)
+                cb_msg = (
+                    "Dit duurt wat langer dan verwacht. "
+                    "Ik bel je terug zodra ik het antwoord heb!"
+                    if language == "nl"
+                    else "This is taking longer than expected. "
+                    "I'll call you back as soon as I have the answer!"
+                )
+                self._speak(cb_msg, language)
+                producer.join(timeout=5)
+                return  # Don't play streaming response after callback announcement
+            else:
+                slow_msg = (
+                    "Het duurt even, nog even geduld..."
+                    if language == "nl"
+                    else "Still working on it, please hold..."
+                )
+                self._speak(slow_msg, language)
+                # Fall through to play whatever comes
+                got_first = first_sentence_event.wait(timeout=30)
 
-            start_ts = time.time()
-            played = self._play_audio(audio_file)
+        # Play audio files as they arrive (if we got a response)
+        if got_first:
+            while self.call_active:
+                try:
+                    audio_file = audio_queue.get(timeout=20)
+                except queue.Empty:
+                    break
 
-            # Keep for call recording timeline (don't delete)
-            self._call_timeline.append({"type": "assistant", "file": audio_file, "start": start_ts})
+                if audio_file is None:
+                    break
 
-            if not played:
-                break
+                start_ts = time.time()
+                played = self._play_audio(audio_file)
+                self._call_timeline.append({"type": "assistant", "file": audio_file, "start": start_ts})
+
+                if not played:
+                    break
 
         producer.join(timeout=5)
 
@@ -646,11 +837,10 @@ class VoiceCall(pj.Call):
             full_text = " ".join(full_response)
             self.conversation.add_exchange(text, full_text, language)
 
-            # Log AI response transcript
             if self.call_logger and self._call_log_id:
                 self.call_logger.add_transcript(self._call_log_id, "assistant", full_text, language)
 
-        # Handle timeout -> callback
+        # Handle explicit timeout from ollama
         if timed_out and self.callback_queue and self.caller_number:
             self.callback_queue.add(self.caller_number, text)
             self._speak_cached("callback_notice", language)
@@ -671,19 +861,46 @@ class VoiceCall(pj.Call):
             self._handle_streaming_response(text, language)
 
     def _fixed_listen(self, duration: float = 6.0) -> Optional[str]:
-        """Fallback: fixed-duration recording (used when VAD is not available)."""
+        """Record caller audio for a fixed duration.
+
+        Uses PJSIP AudioMediaRecorder via the conference bridge.
+        Also logs conference bridge port info for diagnostics.
+        """
         if not self.call_active:
             return None
 
         aud_med = self._get_active_audio_media()
         if aud_med is None:
+            logger.warning("No active audio media for recording")
             return None
 
-        record_file = f"/app/audio/tmp/recording_{id(self)}_{int(time.time()*1000)}.wav"
+        record_file = str(get_path("audio_tmp") / f"recording_{id(self)}_{int(time.time()*1000)}.wav")
+
+        # Log conference bridge port info for diagnostics
+        try:
+            pi = aud_med.getPortInfo()
+            logger.info(
+                "Call media port: id=%d, name=%s, format=%dHz/%dch",
+                pi.portId, pi.name, pi.format.clockRate, pi.format.channelCount,
+            )
+        except Exception as e:
+            logger.warning("Could not get port info: %s", e)
+
         recorder = pj.AudioMediaRecorder()
         try:
             recorder.createRecorder(record_file)
-            time.sleep(0.05)  # Conference bridge settling
+
+            # Log recorder port info
+            try:
+                rpi = recorder.getPortInfo()
+                logger.info(
+                    "Recorder port: id=%d, name=%s, format=%dHz/%dch",
+                    rpi.portId, rpi.name, rpi.format.clockRate, rpi.format.channelCount,
+                )
+            except Exception as e:
+                logger.warning("Could not get recorder port info: %s", e)
+
+            time.sleep(0.05)
             aud_med.startTransmit(recorder)
 
             interrupted = self._disconnected.wait(timeout=duration)
@@ -693,26 +910,46 @@ class VoiceCall(pj.Call):
             except Exception:
                 pass
 
+            # CRITICAL: destroy recorder to flush WAV headers to disk.
+            del recorder
+
             if interrupted:
                 return None
 
-            if Path(record_file).exists() and Path(record_file).stat().st_size > 1000:
-                # Diagnostic: log audio levels to detect silent recordings
+            file_exists = Path(record_file).exists()
+            file_size = Path(record_file).stat().st_size if file_exists else 0
+            logger.info("Recording file: exists=%s, size=%d bytes", file_exists, file_size)
+
+            if file_exists and file_size > 1000:
                 try:
                     import struct
                     with wave.open(record_file, "rb") as wf:
-                        frames = wf.readframes(wf.getnframes())
-                        if frames:
+                        n_frames = wf.getnframes()
+                        framerate = wf.getframerate()
+                        channels = wf.getnchannels()
+                        sampwidth = wf.getsampwidth()
+                        frames = wf.readframes(n_frames)
+                        logger.info(
+                            "WAV: %d frames, %dHz, %dch, %d-bit, %d raw bytes",
+                            n_frames, framerate, channels, sampwidth * 8, len(frames),
+                        )
+                        if frames and len(frames) >= 2:
                             samples = struct.unpack(f"<{len(frames)//2}h", frames)
                             max_amp = max(abs(s) for s in samples)
+                            # Check different portions of the recording
+                            quarter = len(samples) // 4
+                            q1_max = max(abs(s) for s in samples[:quarter]) if quarter > 0 else 0
+                            q4_max = max(abs(s) for s in samples[-quarter:]) if quarter > 0 else 0
                             logger.info(
-                                "Recording: %d bytes, max_amplitude=%d (%s)",
-                                len(frames), max_amp,
-                                "HAS AUDIO" if max_amp > 100 else "SILENT - no RTP received"
+                                "Recording amplitude: max=%d, q1_max=%d, q4_max=%d (%s)",
+                                max_amp, q1_max, q4_max,
+                                "HAS AUDIO" if max_amp > 100 else "SILENT"
                             )
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error("Recording diagnostic error: %s", e)
                 return record_file
+
+            logger.info("Recording file too small or missing (size=%d)", file_size)
             return None
 
         except Exception as e:
@@ -797,9 +1034,16 @@ class VoiceCall(pj.Call):
     def _cleanup(self) -> None:
         """Clean up resources after call ends."""
         self.call_active = False
+        # Clean up deferred recorder and player
+        for attr in ('_prev_recorder', '_player'):
+            if hasattr(self, attr):
+                try:
+                    delattr(self, attr)
+                except Exception:
+                    pass
         self.recorder = None
         # Clean up temp audio files for this call
-        tmp_dir = Path("/app/audio/tmp")
+        tmp_dir = get_path("audio_tmp")
         if tmp_dir.exists():
             call_id = str(id(self))
             for f in tmp_dir.glob(f"*_{call_id}_*"):

@@ -6,6 +6,8 @@ from pathlib import Path
 import requests
 from flask import Blueprint, jsonify, request
 
+from ..config import get_path
+
 logger = logging.getLogger(__name__)
 
 models_bp = Blueprint("models", __name__)
@@ -133,7 +135,7 @@ def get_tts_voices():
     if not agent or not agent.tts:
         return jsonify({"error": "TTS not available"}), 503
 
-    models_dir = Path("/app/models/piper")
+    models_dir = get_path("piper_models")
     voices = []
     if models_dir.exists():
         for f in sorted(models_dir.glob("*.onnx")):
@@ -173,7 +175,7 @@ def switch_tts_voice():
     if not voice_file:
         return jsonify({"error": "voice_file parameter required"}), 400
 
-    model_path = Path("/app/models/piper") / voice_file
+    model_path = get_path("piper_models") / voice_file
     if not model_path.exists():
         return jsonify({"error": f"Voice file not found: {voice_file}"}), 404
 

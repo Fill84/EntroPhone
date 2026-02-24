@@ -6,6 +6,8 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request, send_file
 
+from ..config import get_path
+
 logger = logging.getLogger(__name__)
 
 tests_bp = Blueprint("tests", __name__)
@@ -24,7 +26,7 @@ def test_tts():
     text = data.get("text", "Dit is een test van het spraaksysteem.")
     language = data.get("language", "nl")
 
-    audio_dir = Path("/app/audio/tmp")
+    audio_dir = get_path("audio_tmp")
     audio_dir.mkdir(parents=True, exist_ok=True)
     output_file = str(audio_dir / f"test_tts_{int(time.time()*1000)}.wav")
 
@@ -55,10 +57,10 @@ def serve_tts_audio():
         return jsonify({"error": "file parameter required"}), 400
 
     # Security: only serve from tmp directory
-    audio_path = Path("/app/audio/tmp") / Path(filename).name
+    audio_path = get_path("audio_tmp") / Path(filename).name
     if not audio_path.exists():
         # Try cache directory
-        audio_path = Path("/app/audio/cache") / Path(filename).name
+        audio_path = get_path("audio_cache") / Path(filename).name
 
     if not audio_path.exists():
         return jsonify({"error": "File not found"}), 404
@@ -78,7 +80,7 @@ def test_stt():
     # Accept file upload or use a test file
     if "audio" in request.files:
         audio = request.files["audio"]
-        audio_path = Path("/app/audio/tmp") / f"test_stt_{int(time.time()*1000)}.wav"
+        audio_path = get_path("audio_tmp") / f"test_stt_{int(time.time()*1000)}.wav"
         audio.save(str(audio_path))
     else:
         return jsonify({"error": "Audio file required (upload as 'audio')"}), 400

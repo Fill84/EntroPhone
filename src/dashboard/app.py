@@ -1,10 +1,11 @@
 """Flask app factory with SocketIO for the ClaudePhone dashboard."""
 
 import logging
+import os
 import threading
 from typing import Optional
 
-from flask import Flask
+from flask import Flask, jsonify, render_template, request
 from flask_socketio import SocketIO
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ _config = None
 _callback_queue = None
 _call_logger = None
 _db = None
+_flask_app = None
 
 # Event signaled when setup is completed via the wizard
 _setup_event = threading.Event()
@@ -68,10 +70,17 @@ def get_setup_event() -> threading.Event:
     return _setup_event
 
 
+def get_flask_app():
+    """Get the Flask application instance."""
+    return _flask_app
+
+
 def _create_app_with_blueprints() -> Flask:
     """Create Flask app and register all blueprints."""
+    global _flask_app
     app = Flask(__name__, template_folder="templates")
-    app.config["SECRET_KEY"] = "claudephone-dashboard"
+    _flask_app = app
+    app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", os.urandom(32).hex())
 
     socketio.init_app(app, cors_allowed_origins="*", async_mode="threading")
 
@@ -95,6 +104,25 @@ def _create_app_with_blueprints() -> Flask:
 
     from .audio_streamer import register_socket_events
     register_socket_events(socketio)
+
+    # JSON error handlers for API routes (prevent HTML error pages)
+    @app.errorhandler(404)
+    def handle_404(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Not found"}), 404
+        return render_template("index.html")
+
+    @app.errorhandler(405)
+    def handle_405(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Method not allowed"}), 405
+        return render_template("index.html")
+
+    @app.errorhandler(500)
+    def handle_500(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Internal server error"}), 500
+        return render_template("index.html"), 500
 
     return app
 
@@ -145,6 +173,9 @@ def init_dashboard(agent, config, callback_queue, call_logger=None, port=8080):
 
     # If dashboard is already running (from init_dashboard_early), just update refs
     if _db is not None:
+        # Register plugin routes now that agent (and plugin manager) is available
+        from .api_plugins import register_plugin_routes
+        register_plugin_routes(app=_flask_app)
         logger.info("Dashboard already running, agent reference updated")
         return
 

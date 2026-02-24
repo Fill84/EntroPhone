@@ -16,32 +16,51 @@ def index():
 @main_bp.route("/<path:path>")
 def catch_all(path):
     """Serve index.html for all non-API routes (client-side routing)."""
+    if path.startswith("api/"):
+        return jsonify({"error": "Not found"}), 404
     return render_template("index.html")
 
 
 @main_bp.route("/health")
+@main_bp.route("/api/health")
 def health():
+    """Health check endpoint for Docker HEALTHCHECK and monitoring.
+
+    Returns HTTP 200 if the dashboard is responsive (even during setup).
+    Returns HTTP 503 only if critical components have failed.
+    """
     from .app import get_agent, get_callback_queue, get_db
     agent = get_agent()
     cq = get_callback_queue()
     db = get_db()
 
+    healthy = db is not None  # Minimum requirement: database must work
+
     status = {
-        "status": "ok" if agent else "setup",
+        "status": "ok" if (agent and healthy) else ("setup" if healthy else "unhealthy"),
+        "database": db is not None,
         "sip_registered": False,
         "in_call": False,
+        "components": {},
         "callbacks_pending": 0,
         "setup_complete": db.is_setup_complete() if db else False,
     }
 
-    if agent and agent.account:
-        status["sip_registered"] = agent.account.is_registered
-        status["in_call"] = agent.account.current_call is not None
+    if agent:
+        status["components"] = {
+            "tts": agent.tts is not None,
+            "stt": agent.stt is not None,
+            "ollama": agent.ollama is not None,
+        }
+        if agent.account:
+            status["sip_registered"] = agent.account.is_registered
+            status["in_call"] = agent.account.current_call is not None
 
     if cq:
         status["callbacks_pending"] = cq.size()
 
-    return jsonify(status)
+    http_code = 200 if healthy else 503
+    return jsonify(status), http_code
 
 
 @main_bp.route("/api/status")

@@ -10,7 +10,9 @@ logger = logging.getLogger(__name__)
 
 config_bp = Blueprint("config", __name__)
 
-ENV_FILE = "/app/.env"
+from ..config import get_path
+
+ENV_FILE = str(get_path("env_file"))
 
 # Settings that can be hot-reloaded (no restart needed)
 HOT_RELOAD_KEYS = {
@@ -18,6 +20,7 @@ HOT_RELOAD_KEYS = {
     "TTS_VOLUME_GAIN_DB", "TTS_LENGTH_SCALE", "TTS_NOISE_SCALE", "TTS_NOISE_W",
     "VAD_THRESHOLD", "VAD_MIN_SILENCE_MS", "VAD_SPEECH_PAD_MS", "VAD_MIN_SPEECH_MS",
     "SIP_GREETING_DELAY", "ASSISTANT_NAME",
+    "GREETING_NL", "GREETING_EN", "SIP_PBX_LAN_IP",
 }
 
 # Settings that need container restart
@@ -32,11 +35,19 @@ RESTART_KEYS = {
 # Sensitive keys (masked in output)
 SENSITIVE_KEYS = {"SIP_PASSWORD"}
 
+# Human-friendly descriptions shown as tooltips/placeholders
+KEY_DESCRIPTIONS = {
+    "GREETING_NL": "Dutch greeting template. Variables: {caller_name}, {assistant_name}, {plugins}",
+    "GREETING_EN": "English greeting template. Variables: {caller_name}, {assistant_name}, {plugins}",
+    "SIP_PBX_LAN_IP": "PBX LAN IP for NAT punch-through (fixes first-call audio issue)",
+    "ASSISTANT_NAME": "Name the assistant introduces itself with",
+}
+
 # Only keys with these prefixes are shown in the Config tab.
 # Everything else (plugin keys, etc.) is managed elsewhere.
 CORE_PREFIXES = (
     "SIP_", "OLLAMA_", "STT_", "TTS_",
-    "VAD_", "DASHBOARD_", "ASSISTANT_",
+    "VAD_", "DASHBOARD_", "ASSISTANT_", "GREETING_",
 )
 
 
@@ -72,7 +83,8 @@ def get_all_config():
             "needs_restart": key in RESTART_KEYS,
             "sensitive": is_sensitive,
             "source": "db" if key in db_settings else ("env" if key in env_vars else "default"),
-            "group": key.split("_", 1)[0],
+            "group": "ASSISTANT" if key.startswith("GREETING_") else key.split("_", 1)[0],
+            "description": KEY_DESCRIPTIONS.get(key, ""),
         })
     return jsonify(result)
 
@@ -251,8 +263,14 @@ def _apply_hot_reload(key: str, value: str) -> None:
     # Assistant settings
     elif key == "ASSISTANT_NAME":
         agent.config["assistant"]["name"] = value
+    elif key == "GREETING_NL":
+        agent.config["assistant"]["greeting_nl"] = value
+    elif key == "GREETING_EN":
+        agent.config["assistant"]["greeting_en"] = value
     elif key == "SIP_GREETING_DELAY":
         agent.config["sip"]["greeting_delay"] = float(value)
+    elif key == "SIP_PBX_LAN_IP":
+        agent.config["sip"]["pbx_lan_ip"] = value
 
     logger.info("Hot-reloaded: %s = %s", key, value)
 

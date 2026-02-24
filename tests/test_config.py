@@ -22,7 +22,7 @@ def test_load_config_defaults():
     assert config["stt"]["device"] == "cuda"
     assert config["vad"]["threshold"] == 0.4
     assert config["vad"]["min_silence_ms"] == 800
-    assert config["tts"]["voice_nl"] == "mls"
+    assert config["tts"]["voice_nl"] == "nathalie"
     assert config["tts"]["voice_en"] == "amy"
 
 
@@ -38,43 +38,24 @@ def test_validate_config_missing_sip():
     assert any("SIP_PASSWORD" in e for e in errors)
 
 
-def test_validate_config_ha_enabled_missing_token():
-    """Test validation catches missing HA token when enabled."""
-    from src.config import validate_config
-
-    config = {
-        "sip": {"server": "test", "username": "test", "password": "test"},
-        "homeassistant": {"enabled": True, "base_url": "", "access_token": ""},
-    }
-    errors = validate_config(config)
-    assert any("HA_BASE_URL" in e for e in errors)
-    assert any("HA_ACCESS_TOKEN" in e for e in errors)
-
-
 def test_validate_config_valid():
     """Test validation passes with valid config."""
     from src.config import validate_config
 
     config = {
         "sip": {"server": "sip.test.com", "username": "user", "password": "pass"},
-        "homeassistant": {"enabled": False},
     }
     errors = validate_config(config)
     assert len(errors) == 0
 
 
-def test_parse_servers():
-    """Test monitoring servers JSON parsing."""
-    from src.config import _parse_servers
+def test_get_path():
+    """Test centralized path helper."""
+    from src.config import get_path
+    import pytest
 
-    result = _parse_servers('[{"name":"Test","type":"ping","host":"localhost"}]')
-    assert len(result) == 1
-    assert result[0]["name"] == "Test"
+    path = get_path("db_file")
+    assert "claudephone.db" in str(path)
 
-    # Invalid JSON
-    result = _parse_servers("not json")
-    assert result == []
-
-    # Empty
-    result = _parse_servers("")
-    assert result == []
+    with pytest.raises(KeyError):
+        get_path("nonexistent_key")
