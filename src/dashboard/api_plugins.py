@@ -52,6 +52,14 @@ def list_plugins():
                 "hot_reload": f.hot_reload,
                 "current_value": "" if f.sensitive else current,
             })
+        pages = []
+        for page in plugin.dashboard_pages:
+            pages.append({
+                "id": page.id,
+                "title": page.title,
+                "icon": page.icon,
+                "type": page.type,
+            })
         result.append({
             "name": meta.name,
             "display_name": meta.display_name,
@@ -61,6 +69,7 @@ def list_plugins():
             "enabled": pm.is_enabled(name),
             "configured": pm._check_configured(plugin),
             "config_fields": fields,
+            "pages": pages,
         })
     return jsonify(result)
 
@@ -300,6 +309,59 @@ def uninstall_plugin(name):
         deleted_file = True
 
     return jsonify({"success": True, "file_deleted": deleted_file})
+
+
+@plugins_bp.route("/<name>/pages")
+def plugin_pages(name):
+    """List dashboard pages a plugin provides."""
+    pm = _get_pm()
+    if not pm:
+        return jsonify({"error": "Plugin manager not available"}), 503
+
+    plugin = pm.plugins.get(name)
+    if not plugin:
+        return jsonify({"error": "Plugin not found"}), 404
+
+    pages = []
+    for page in plugin.dashboard_pages:
+        pages.append({
+            "id": page.id,
+            "title": page.title,
+            "icon": page.icon,
+            "type": page.type,
+        })
+    return jsonify({"plugin": name, "pages": pages})
+
+
+@plugins_bp.route("/<name>/pages/<page_id>")
+def plugin_page_render(name, page_id):
+    """Render a specific plugin dashboard page."""
+    pm = _get_pm()
+    if not pm:
+        return jsonify({"error": "Plugin manager not available"}), 503
+
+    plugin = pm.plugins.get(name)
+    if not plugin:
+        return jsonify({"error": "Plugin not found"}), 404
+
+    # Verify page_id is valid
+    valid_ids = [p.id for p in plugin.dashboard_pages]
+    if page_id not in valid_ids:
+        return jsonify({"error": "Page not found"}), 404
+
+    try:
+        html = plugin.render_page(page_id)
+        page_meta = next(p for p in plugin.dashboard_pages if p.id == page_id)
+        return jsonify({
+            "plugin": name,
+            "page_id": page_id,
+            "title": page_meta.title,
+            "type": page_meta.type,
+            "html": html,
+        })
+    except Exception as e:
+        logger.error("Plugin page render failed: %s", e, exc_info=True)
+        return jsonify({"error": str(e)}), 500
 
 
 def _refresh_router(pm):

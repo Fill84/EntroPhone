@@ -805,6 +805,14 @@
             </div>
         </div>
 
+        <!-- ============ PLUGIN PAGE (dynamic) ============ -->
+        <div class="tab-panel" id="panel-plugin-page">
+            <div style="margin-bottom:12px">
+                <a href="/plugins" onclick="event.preventDefault();navigate('/plugins')" style="color:#38bdf8;text-decoration:none;font-size:0.85rem">&larr; Back to Plugins</a>
+            </div>
+            <div id="plugin-page-content">Loading...</div>
+        </div>
+
         <!-- ============ SYSTEM TAB ============ -->
         <div class="tab-panel" id="panel-system">
             <div class="grid">
@@ -870,24 +878,110 @@
     </div>
 
     <script>
-        // ==================== Tab Navigation ====================
+        // ==================== Client-Side Router ====================
+        const ROUTE_MAP = {
+            '/': 'overview',
+            '/overview': 'overview',
+            '/tests': 'tests',
+            '/config': 'config',
+            '/plugins': 'plugins',
+            '/models': 'models',
+            '/calls': 'calls',
+            '/data': 'data',
+            '/system': 'system',
+        };
+
+        const TAB_ROUTES = {
+            'overview': '/',
+            'tests': '/tests',
+            'config': '/config',
+            'plugins': '/plugins',
+            'models': '/models',
+            'calls': '/calls',
+            'data': '/data',
+            'system': '/system',
+        };
+
+        function navigate(path, replace = false) {
+            if (replace) {
+                history.replaceState({ path }, '', path);
+            } else {
+                history.pushState({ path }, '', path);
+            }
+            handleRoute();
+        }
+
+        function handleRoute() {
+            const path = window.location.pathname;
+
+            // Check for plugin page route: /plugins/<name>/<page_id>
+            const pluginPageMatch = path.match(/^\/plugins\/([^/]+)\/([^/]+)$/);
+            if (pluginPageMatch) {
+                const pluginName = pluginPageMatch[1];
+                const pageId = pluginPageMatch[2];
+                activatePanel('plugin-page');
+                loadPluginPage(pluginName, pageId);
+                return;
+            }
+
+            // Standard tab route
+            const tab = ROUTE_MAP[path] || 'overview';
+            activatePanel(tab);
+            loadTabData(tab);
+        }
+
+        function activatePanel(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+
+            // Activate the tab button (for standard tabs)
+            const tabEl = document.querySelector(`.tab[data-tab="${tabName}"]`);
+            if (tabEl) tabEl.classList.add('active');
+            // For plugin pages, highlight the plugins tab
+            if (tabName === 'plugin-page') {
+                const pluginsTab = document.querySelector('.tab[data-tab="plugins"]');
+                if (pluginsTab) pluginsTab.classList.add('active');
+            }
+
+            const panel = document.getElementById('panel-' + tabName);
+            if (panel) panel.classList.add('active');
+        }
+
+        function loadTabData(tab) {
+            if (tab === 'config') loadConfig();
+            if (tab === 'plugins') loadPlugins();
+            if (tab === 'models') { loadOllamaModels(); loadTTSVoices(); }
+            if (tab === 'calls') loadCallHistory();
+            if (tab === 'data') { loadNotes(); loadEvents(); loadMediaStatus(); }
+            if (tab === 'system') { loadResources(); loadCache(); loadLogs(); }
+        }
+
+        async function loadPluginPage(pluginName, pageId) {
+            const container = document.getElementById('plugin-page-content');
+            container.innerHTML = 'Loading...';
+            try {
+                const d = await fetch(`/api/plugins/${encodeURIComponent(pluginName)}/pages/${encodeURIComponent(pageId)}`).then(r => r.json());
+                if (d.error) {
+                    container.innerHTML = `<div class="card"><h3>Error</h3><p style="color:#ef4444">${esc(d.error)}</p></div>`;
+                    return;
+                }
+                container.innerHTML = `<div class="card"><h3>${esc(d.title)}</h3>${d.html}</div>`;
+            } catch (e) {
+                container.innerHTML = `<div class="card"><h3>Error</h3><p style="color:#ef4444">Failed to load page: ${esc(e)}</p></div>`;
+            }
+        }
+
+        // Tab click handlers
         document.querySelectorAll('.tab').forEach(tab => {
             tab.addEventListener('click', () => {
-                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-                tab.classList.add('active');
-                document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
-
-                // Load tab data
-                const t = tab.dataset.tab;
-                if (t === 'config') loadConfig();
-                if (t === 'plugins') loadPlugins();
-                if (t === 'models') { loadOllamaModels(); loadTTSVoices(); }
-                if (t === 'calls') loadCallHistory();
-                if (t === 'data') { loadNotes(); loadEvents(); loadMediaStatus(); }
-                if (t === 'system') { loadResources(); loadCache(); loadLogs(); }
+                const tabName = tab.dataset.tab;
+                const route = TAB_ROUTES[tabName] || '/';
+                navigate(route);
             });
         });
+
+        // Browser back/forward
+        window.addEventListener('popstate', handleRoute);
 
         // ==================== Overview ====================
         async function refreshOverview() {
@@ -1369,19 +1463,8 @@
 
         // ==================== Tab Switching ====================
         function switchTab(tabName) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-            const tab = document.querySelector(`.tab[data-tab="${tabName}"]`);
-            if (tab) {
-                tab.classList.add('active');
-                document.getElementById('panel-' + tabName).classList.add('active');
-                if (tabName === 'config') loadConfig();
-                if (tabName === 'plugins') loadPlugins();
-                if (tabName === 'models') { loadOllamaModels(); loadTTSVoices(); }
-                if (tabName === 'calls') loadCallHistory();
-                if (tabName === 'data') { loadNotes(); loadEvents(); loadMediaStatus(); }
-                if (tabName === 'system') { loadResources(); loadCache(); loadLogs(); }
-            }
+            const route = TAB_ROUTES[tabName] || '/';
+            navigate(route);
         }
 
         function highlightConfig(keys) {
@@ -1479,6 +1562,10 @@
                             </div>
                         </div>
                         ${p.description ? `<div style="color:#94a3b8;font-size:0.85rem;margin-top:6px">${esc(p.description)}</div>` : ''}
+                        ${(p.pages && p.pages.length) ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">${p.pages.map(pg =>
+                            `<a href="/plugins/${esc(p.name)}/${esc(pg.id)}" onclick="event.preventDefault();navigate('/plugins/${esc(p.name)}/${esc(pg.id)}')"
+                                class="btn btn-sm" style="text-decoration:none;display:inline-block">${pg.icon ? esc(pg.icon) + ' ' : ''}${esc(pg.title)}</a>`
+                        ).join('')}</div>` : ''}
                         ${configHtml}
                     </div>`;
                 }).join('');
@@ -1837,8 +1924,9 @@
             } catch (e) { console.log('Setup check skipped'); }
         }
 
-        // ==================== Auto-refresh ====================
+        // ==================== Init & Auto-refresh ====================
         checkSetup();
+        handleRoute(); // activate the correct tab based on current URL
         refreshOverview();
         setInterval(refreshOverview, 5000);
     </script>

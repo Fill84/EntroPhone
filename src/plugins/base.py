@@ -32,6 +32,18 @@ class PluginMeta:
     author: str = ""
 
 
+@dataclass
+class DashboardPage:
+    """A dashboard page that a plugin provides.
+
+    The ``id`` becomes part of the URL: ``/plugins/<plugin_name>/<id>``.
+    """
+    id: str
+    title: str
+    icon: str = ""
+    type: str = "config"  # config, wizard, custom
+
+
 class PluginBase(ABC):
     """Abstract base class for ClaudePhone plugins.
 
@@ -84,6 +96,23 @@ class PluginBase(ABC):
     def config_schema(self) -> List[ConfigField]:
         """Configuration fields this plugin needs (.env keys)."""
         return []
+
+    @property
+    def dashboard_pages(self) -> List["DashboardPage"]:
+        """Dashboard pages this plugin provides.
+
+        Each page gets its own URL: ``/plugins/<plugin_name>/<page_id>``.
+        Override to add custom config pages, setup wizards, etc.
+        """
+        return []
+
+    def render_page(self, page_id: str) -> str:
+        """Return HTML content for a plugin dashboard page.
+
+        Override this to provide custom page content. The returned HTML
+        is inserted into the dashboard's plugin-page container.
+        """
+        return ""
 
     @property
     def enabled_env_key(self) -> Optional[str]:

@@ -13,6 +13,12 @@ def index():
     return render_template("index.html")
 
 
+@main_bp.route("/<path:path>")
+def catch_all(path):
+    """Serve index.html for all non-API routes (client-side routing)."""
+    return render_template("index.html")
+
+
 @main_bp.route("/health")
 def health():
     from .app import get_agent, get_callback_queue, get_db
