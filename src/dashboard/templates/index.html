@@ -1,0 +1,1759 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClaudeViool Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+        }
+
+        .header h1 {
+            color: #38bdf8;
+            font-size: 1.4rem;
+            white-space: nowrap;
+        }
+
+        .header-status {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            margin-left: auto;
+            font-size: 0.85rem;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 4px;
+        }
+
+        .status-dot.on {
+            background: #22c55e;
+            box-shadow: 0 0 6px #22c55e;
+        }
+
+        .status-dot.off {
+            background: #ef4444;
+            box-shadow: 0 0 6px #ef4444;
+        }
+
+        .status-dot.warn {
+            background: #f59e0b;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            background: #1e293b;
+            border-bottom: 1px solid #334155;
+            padding: 0 1rem;
+            overflow-x: auto;
+        }
+
+        .tab {
+            padding: 0.75rem 1.25rem;
+            cursor: pointer;
+            color: #94a3b8;
+            border-bottom: 2px solid transparent;
+            white-space: nowrap;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: #e2e8f0;
+            background: #262f40;
+        }
+
+        .tab.active {
+            color: #38bdf8;
+            border-bottom-color: #38bdf8;
+        }
+
+        /* Content */
+        .content {
+            flex: 1;
+            padding: 1.5rem 2rem;
+            overflow-y: auto;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        /* Cards & Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1rem;
+        }
+
+        .card {
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 1.25rem;
+            border: 1px solid #334155;
+        }
+
+        .card h3 {
+            color: #94a3b8;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.8rem;
+        }
+
+        .stat {
+            margin: 0.4rem 0;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stat-label {
+            color: #94a3b8;
+            font-size: 0.85rem;
+            min-width: 100px;
+        }
+
+        .stat-value {
+            color: #f1f5f9;
+            font-weight: 600;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+
+        .badge.on {
+            background: #166534;
+            color: #86efac;
+        }
+
+        .badge.off {
+            background: #7f1d1d;
+            color: #fca5a5;
+        }
+
+        .badge.info {
+            background: #1e3a5f;
+            color: #93c5fd;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 0.5rem;
+        }
+
+        th {
+            text-align: left;
+            color: #94a3b8;
+            font-size: 0.75rem;
+            padding: 6px 8px;
+            border-bottom: 1px solid #334155;
+            text-transform: uppercase;
+        }
+
+        td {
+            padding: 6px 8px;
+            border-bottom: 1px solid #1e293b;
+            font-size: 0.85rem;
+        }
+
+        tr:hover td {
+            background: #262f40;
+        }
+
+        /* Buttons */
+        button,
+        .btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 7px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+        }
+
+        .btn-success {
+            background: #22c55e;
+        }
+
+        .btn-sm {
+            padding: 4px 10px;
+            font-size: 0.75rem;
+        }
+
+        /* Form elements */
+        input,
+        select,
+        textarea {
+            background: #0f172a;
+            color: #e2e8f0;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 0.85rem;
+            width: 100%;
+        }
+
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+            font-family: inherit;
+        }
+
+        .form-row {
+            margin-bottom: 0.75rem;
+        }
+
+        .form-row label {
+            display: block;
+            color: #94a3b8;
+            font-size: 0.8rem;
+            margin-bottom: 4px;
+        }
+
+        /* Log viewer */
+        .log-viewer {
+            background: #020617;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 0.75rem;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.75rem;
+            line-height: 1.5;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .log-viewer .log-error {
+            color: #ef4444;
+        }
+
+        .log-viewer .log-warn {
+            color: #f59e0b;
+        }
+
+        .log-viewer .log-info {
+            color: #94a3b8;
+        }
+
+        /* Result box */
+        .result-box {
+            background: #020617;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            padding: 0.75rem;
+            margin-top: 0.5rem;
+            font-size: 0.85rem;
+        }
+
+        /* Progress bar */
+        .progress-bar {
+            height: 6px;
+            background: #334155;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.5s;
+        }
+
+        .progress-fill.green {
+            background: #22c55e;
+        }
+
+        .progress-fill.yellow {
+            background: #f59e0b;
+        }
+
+        .progress-fill.red {
+            background: #ef4444;
+        }
+
+        /* Flex helpers */
+        .flex {
+            display: flex;
+            gap: 0.75rem;
+            align-items: center;
+        }
+
+        .flex-wrap {
+            flex-wrap: wrap;
+        }
+
+        .mt-1 {
+            margin-top: 0.5rem;
+        }
+
+        .mt-2 {
+            margin-top: 1rem;
+        }
+
+        .mb-1 {
+            margin-bottom: 0.5rem;
+        }
+
+        .gap-sm {
+            gap: 0.5rem;
+        }
+
+        /* Transcript */
+        .transcript-entry {
+            padding: 6px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+
+        .transcript-role {
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+
+        .transcript-role.user {
+            color: #38bdf8;
+        }
+
+        .transcript-role.assistant {
+            color: #a78bfa;
+        }
+
+        .transcript-text {
+            margin-top: 2px;
+            font-size: 0.85rem;
+        }
+
+        /* Setup Wizard */
+        .wizard-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.95);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .wizard-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 2rem;
+            width: min(600px, 90vw);
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .wizard-card h2 {
+            margin-bottom: 0.5rem;
+        }
+
+        .wizard-steps {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 1.5rem;
+        }
+
+        .wizard-step {
+            flex: 1;
+            height: 4px;
+            border-radius: 2px;
+            background: #334155;
+        }
+
+        .wizard-step.active {
+            background: #38bdf8;
+        }
+
+        .wizard-step.done {
+            background: #22c55e;
+        }
+
+        .wizard-field {
+            margin-bottom: 12px;
+        }
+
+        .wizard-field label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 0.85rem;
+            color: #94a3b8;
+        }
+
+        .wizard-field input, .wizard-field select {
+            width: 100%;
+            padding: 8px 12px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #e2e8f0;
+            font-size: 0.9rem;
+        }
+
+        .wizard-nav {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 1.5rem;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Setup Wizard Overlay (hidden by default) -->
+    <div class="wizard-overlay" id="setup-wizard" style="display:none">
+        <div class="wizard-card">
+            <h2>ClaudeViool Setup</h2>
+            <p style="color:#94a3b8;margin-bottom:1rem">Configure your voice assistant in a few steps.</p>
+            <div class="wizard-steps" id="wizard-steps"></div>
+            <div id="wizard-content"></div>
+            <div class="wizard-nav">
+                <button id="wizard-back" onclick="wizardBack()" style="visibility:hidden">Back</button>
+                <button class="btn-success" id="wizard-next" onclick="wizardNext()">Next</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Header -->
+    <div class="header">
+        <h1>ClaudeViool</h1>
+        <div class="header-status">
+            <span><span class="status-dot" id="hdr-sip"></span> SIP</span>
+            <span><span class="status-dot" id="hdr-call"></span> <span id="hdr-call-text">Idle</span></span>
+            <span id="hdr-callbacks" style="color:#94a3b8"></span>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs">
+        <div class="tab active" data-tab="overview">Overview</div>
+        <div class="tab" data-tab="tests">Tests</div>
+        <div class="tab" data-tab="config">Config</div>
+        <div class="tab" data-tab="plugins">Plugins</div>
+        <div class="tab" data-tab="models">Models</div>
+        <div class="tab" data-tab="calls">Calls</div>
+        <div class="tab" data-tab="data">Integrations</div>
+        <div class="tab" data-tab="system">System</div>
+    </div>
+
+    <!-- Content -->
+    <div class="content">
+
+        <!-- ============ OVERVIEW TAB ============ -->
+        <div class="tab-panel active" id="panel-overview">
+            <div class="grid">
+                <div class="card">
+                    <h3>SIP Status</h3>
+                    <div class="stat">
+                        <span class="status-dot" id="sip-dot"></span>
+                        <span class="stat-value" id="sip-status">Loading...</span>
+                    </div>
+                    <div class="stat"><span class="stat-label">In Call</span><span class="stat-value"
+                            id="call-status">-</span></div>
+                    <div class="stat"><span class="stat-label">Caller</span><span class="stat-value"
+                            id="caller">-</span></div>
+                    <div class="stat"><span class="stat-label">Name</span><span class="stat-value"
+                            id="caller-name">-</span></div>
+                    <button class="btn-sm mt-1" onclick="sipReregister()">Re-register</button>
+                </div>
+
+                <div class="card">
+                    <h3>Components</h3>
+                    <div id="components"></div>
+                </div>
+
+                <div class="card">
+                    <h3>Integrations</h3>
+                    <div id="integrations"></div>
+                </div>
+            </div>
+
+            <div class="card mt-2">
+                <h3>Callback Queue (<span id="cb-count">0</span>)</h3>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Number</th>
+                            <th>Message</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cb-body"></tbody>
+                </table>
+                <div class="flex mt-1">
+                    <button class="btn-danger btn-sm" onclick="clearCallbacks()">Clear All</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ TESTS TAB ============ -->
+        <div class="tab-panel" id="panel-tests">
+            <div class="grid">
+                <div class="card">
+                    <h3>TTS Test</h3>
+                    <div class="form-row">
+                        <label>Text</label>
+                        <textarea id="tts-text">Dit is een test van het spraaksysteem.</textarea>
+                    </div>
+                    <div class="form-row">
+                        <label>Language</label>
+                        <select id="tts-lang">
+                            <option value="nl">Nederlands</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                    <button onclick="testTTS()">Generate Speech</button>
+                    <div class="result-box mt-1" id="tts-result" style="display:none"></div>
+                </div>
+
+                <div class="card">
+                    <h3>Ollama Test</h3>
+                    <div class="form-row">
+                        <label>Prompt</label>
+                        <textarea id="ollama-prompt">Zeg hallo in het Nederlands en stel jezelf voor.</textarea>
+                    </div>
+                    <button onclick="testOllama()">Send</button>
+                    <div class="result-box mt-1" id="ollama-result" style="display:none"></div>
+                </div>
+
+                <div class="card">
+                    <h3>Test Call</h3>
+                    <div class="form-row">
+                        <label>Number</label>
+                        <input id="call-number" placeholder="e.g. 9000">
+                    </div>
+                    <div class="form-row">
+                        <label>Message</label>
+                        <textarea id="call-message">Dit is een testgesprek van ClaudeViool.</textarea>
+                    </div>
+                    <button onclick="makeTestCall()">Call</button>
+                    <div class="result-box mt-1" id="call-result" style="display:none"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ CONFIG TAB ============ -->
+        <div class="tab-panel" id="panel-config">
+            <div class="card">
+                <h3>Configuration Editor</h3>
+                <div class="flex mb-1">
+                    <button onclick="loadConfig()">Refresh</button>
+                    <button class="btn-success" onclick="reloadConfig()">Reload All</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Key</th>
+                            <th>Value</th>
+                            <th>Reload</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="config-body"></tbody>
+                </table>
+            </div>
+
+        </div>
+
+        <!-- ============ PLUGINS TAB ============ -->
+        <div class="tab-panel" id="panel-plugins">
+            <div class="card">
+                <h3>Install Plugin from GitHub</h3>
+                <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Enter a GitHub repository URL containing a ClaudePhone2 plugin.</p>
+                <div style="display:flex;gap:6px">
+                    <input id="plugin-github-url" placeholder="https://github.com/user/plugin-repo" style="flex:1;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px">
+                    <button class="btn-sm btn-success" onclick="installPluginFromGithub()" id="plugin-install-btn">Install</button>
+                </div>
+                <div id="plugin-install-status" style="font-size:0.8rem;margin-top:4px"></div>
+            </div>
+            <div class="card">
+                <h3>Installed Plugins <button class="btn-sm" onclick="loadPlugins()" style="margin-left:8px">Refresh</button></h3>
+                <div id="plugins-list">Loading...</div>
+            </div>
+        </div>
+
+        <!-- ============ MODELS TAB ============ -->
+        <div class="tab-panel" id="panel-models">
+            <div class="grid">
+                <div class="card">
+                    <h3>Ollama Models (AI/LLM) <button class="btn-sm" onclick="loadOllamaModels()" style="margin-left:8px">Refresh</button></h3>
+                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 10px">The AI model used for generating responses during calls.</p>
+                    <div class="stat" style="background:#0f172a;border-radius:8px;padding:10px">
+                        <span class="stat-label">Active Model</span>
+                        <span class="stat-value" id="current-ollama" style="color:#38bdf8">-</span>
+                    </div>
+                    <div id="ollama-models" class="mt-1"></div>
+                    <div style="margin-top:12px;border-top:1px solid #334155;padding-top:12px">
+                        <label style="font-size:0.85rem;color:#94a3b8">Pull new model from Ollama registry</label>
+                        <div style="display:flex;gap:6px;margin-top:4px">
+                            <input id="ollama-pull-name" placeholder="e.g. llama3:8b or mistral:latest" style="flex:1;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px">
+                            <button class="btn-sm btn-success" onclick="pullOllamaModel()" id="ollama-pull-btn">Pull</button>
+                        </div>
+                        <div id="ollama-pull-status" style="font-size:0.8rem;margin-top:4px"></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>TTS Voices (Text-to-Speech) <button class="btn-sm" onclick="loadTTSVoices()" style="margin-left:8px">Refresh</button></h3>
+                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 10px">Piper TTS voices used for speaking. Each language has its own active voice.</p>
+                    <div id="tts-current" class="mb-1"></div>
+                    <div id="tts-voices"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ CALLS TAB ============ -->
+        <div class="tab-panel" id="panel-calls">
+            <div class="card">
+                <h3>Call History</h3>
+                <div class="flex mb-1">
+                    <button onclick="loadCallHistory()">Refresh</button>
+                    <select id="calls-days" onchange="loadCallHistory()">
+                        <option value="1">Today</option>
+                        <option value="3">3 days</option>
+                        <option value="7" selected>7 days</option>
+                        <option value="30">30 days</option>
+                    </select>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Dir</th>
+                            <th>Caller</th>
+                            <th>Duration</th>
+                            <th>Transcript</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="calls-body"></tbody>
+                </table>
+            </div>
+
+            <div class="card mt-2" id="call-detail-card" style="display:none">
+                <h3>Call Detail: <span id="detail-id"></span></h3>
+                <div class="stat"><span class="stat-label">Caller</span><span class="stat-value"
+                        id="detail-caller"></span></div>
+                <div class="stat"><span class="stat-label">Duration</span><span class="stat-value"
+                        id="detail-duration"></span></div>
+                <div id="detail-player"></div>
+                <h3 class="mt-1">Transcript <button class="btn-sm" id="btn-download-transcript" onclick="downloadTranscript()" style="margin-left:8px;display:none">Download .md</button></h3>
+                <div id="detail-transcript"></div>
+            </div>
+        </div>
+
+        <!-- ============ DATA TAB (Built-in Integrations) ============ -->
+        <div class="tab-panel" id="panel-data">
+            <p style="color:#94a3b8;font-size:0.85rem;margin:0 0 12px">Built-in integrations managed by ClaudePhone2. These are always available and store data locally in SQLite. Users can interact with these via phone calls.</p>
+            <div class="grid">
+                <!-- Notes Section -->
+                <div class="card">
+                    <h3>Notes (Notities) <button class="btn-sm" onclick="loadNotes()" style="margin-left:8px">Refresh</button></h3>
+                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Notes and reminders. Say "onthoud..." or "remember..." during a call to add notes via voice.</p>
+                    <div class="flex mb-1">
+                        <input id="note-input" placeholder="Add a note..." style="flex:1" onkeyup="if(event.key==='Enter')addNote()">
+                        <button class="btn-success btn-sm" onclick="addNote()">Add</button>
+                    </div>
+                    <div id="notes-list" style="max-height:400px;overflow-y:auto">Loading...</div>
+                </div>
+
+                <!-- Calendar Section -->
+                <div class="card">
+                    <h3>Calendar (Agenda) <button class="btn-sm" onclick="loadEvents()" style="margin-left:8px">Refresh</button></h3>
+                    <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Calendar events. Say "plan een afspraak..." or "schedule..." during a call to add events via voice.</p>
+                    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+                        <input id="event-title" placeholder="Event title">
+                        <div class="flex">
+                            <input id="event-date" type="date" style="flex:1">
+                            <input id="event-time" type="time" style="width:100px">
+                        </div>
+                        <input id="event-desc" placeholder="Description (optional)">
+                        <button class="btn-success btn-sm" onclick="addEvent()">Add Event</button>
+                    </div>
+                    <div id="events-list" style="max-height:400px;overflow-y:auto">Loading...</div>
+                </div>
+            </div>
+
+            <!-- Media Section -->
+            <div class="card mt-2">
+                <h3>Media Player <button class="btn-sm" onclick="loadMediaStatus()" style="margin-left:8px">Refresh</button></h3>
+                <p style="color:#94a3b8;font-size:0.8rem;margin:0 0 8px">Control media playback via Home Assistant. Say "speel muziek" or "play music" during a call. Requires the Home Assistant plugin to be active.</p>
+                <div id="media-status" style="margin-bottom:10px">Loading...</div>
+                <div id="media-controls" style="display:none">
+                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                        <button class="btn-sm" onclick="mediaCommand('previous')">&#9198; Previous</button>
+                        <button class="btn-sm btn-success" onclick="mediaCommand('play')">&#9654; Play</button>
+                        <button class="btn-sm" onclick="mediaCommand('pause')">&#9208; Pause</button>
+                        <button class="btn-sm btn-danger" onclick="mediaCommand('stop')">&#9632; Stop</button>
+                        <button class="btn-sm" onclick="mediaCommand('next')">&#9197; Next</button>
+                        <span style="width:16px"></span>
+                        <button class="btn-sm" onclick="mediaCommand('volume_down')">&#128265; Vol-</button>
+                        <button class="btn-sm" onclick="mediaCommand('volume_up')">&#128266; Vol+</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ============ SYSTEM TAB ============ -->
+        <div class="tab-panel" id="panel-system">
+            <div class="grid">
+                <div class="card">
+                    <h3>CPU</h3>
+                    <div class="stat"><span class="stat-label">Usage</span><span class="stat-value"
+                            id="cpu-pct">-</span></div>
+                    <div class="progress-bar">
+                        <div class="progress-fill green" id="cpu-bar" style="width:0%"></div>
+                    </div>
+                    <div class="stat"><span class="stat-label">Cores</span><span class="stat-value"
+                            id="cpu-cores">-</span></div>
+                </div>
+                <div class="card">
+                    <h3>Memory</h3>
+                    <div class="stat"><span class="stat-label">Usage</span><span class="stat-value"
+                            id="mem-pct">-</span></div>
+                    <div class="progress-bar">
+                        <div class="progress-fill green" id="mem-bar" style="width:0%"></div>
+                    </div>
+                    <div class="stat"><span class="stat-label">Used / Total</span><span class="stat-value"
+                            id="mem-detail">-</span></div>
+                </div>
+                <div class="card">
+                    <h3>GPU</h3>
+                    <div id="gpu-info">-</div>
+                </div>
+                <div class="card">
+                    <h3>Disk</h3>
+                    <div class="stat"><span class="stat-label">Usage</span><span class="stat-value"
+                            id="disk-pct">-</span></div>
+                    <div class="progress-bar">
+                        <div class="progress-fill green" id="disk-bar" style="width:0%"></div>
+                    </div>
+                    <div class="stat"><span class="stat-label">Free</span><span class="stat-value"
+                            id="disk-free">-</span></div>
+                </div>
+            </div>
+
+            <div class="grid mt-2">
+                <div class="card">
+                    <h3>Cache</h3>
+                    <div id="cache-info"></div>
+                    <div class="flex mt-1">
+                        <button class="btn-danger btn-sm" onclick="clearCache()">Clear Cache</button>
+                        <button class="btn-danger btn-sm" onclick="clearTmp()">Clear Tmp</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-2">
+                <h3>Logs <button class="btn-sm" onclick="loadLogs()" style="margin-left:8px">Refresh</button>
+                    <button class="btn-sm" id="live-log-btn" onclick="toggleLiveLogs()"
+                        style="margin-left:4px">Live</button>
+                    <input id="log-search" placeholder="Search..."
+                        style="width:200px;margin-left:8px;display:inline-block"
+                        onkeyup="if(event.key==='Enter')loadLogs()">
+                </h3>
+                <div class="log-viewer" id="log-viewer">Loading...</div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // ==================== Tab Navigation ====================
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+
+                // Load tab data
+                const t = tab.dataset.tab;
+                if (t === 'config') loadConfig();
+                if (t === 'plugins') loadPlugins();
+                if (t === 'models') { loadOllamaModels(); loadTTSVoices(); }
+                if (t === 'calls') loadCallHistory();
+                if (t === 'data') { loadNotes(); loadEvents(); loadMediaStatus(); }
+                if (t === 'system') { loadResources(); loadCache(); loadLogs(); }
+            });
+        });
+
+        // ==================== Overview ====================
+        async function refreshOverview() {
+            try {
+                const [status, callbacks] = await Promise.all([
+                    fetch('/api/status').then(r => r.json()),
+                    fetch('/api/callbacks').then(r => r.json()),
+                ]);
+
+                // Header status
+                document.getElementById('hdr-sip').className = 'status-dot ' + (status.sip.registered ? 'on' : 'off');
+                const inCall = status.sip.in_call;
+                document.getElementById('hdr-call').className = 'status-dot ' + (inCall ? 'warn' : 'on');
+                document.getElementById('hdr-call-text').textContent = inCall ? ('Call: ' + (status.sip.caller_name || status.sip.caller || '?')) : 'Idle';
+                document.getElementById('hdr-callbacks').textContent = status.callbacks_pending > 0 ? `${status.callbacks_pending} callbacks` : '';
+
+                // SIP card
+                document.getElementById('sip-dot').className = 'status-dot ' + (status.sip.registered ? 'on' : 'off');
+                document.getElementById('sip-status').textContent = status.sip.registered ? 'Registered' : 'Not registered';
+                document.getElementById('call-status').textContent = inCall ? 'Yes' : 'No';
+                document.getElementById('caller').textContent = status.sip.caller || '-';
+                document.getElementById('caller-name').textContent = status.sip.caller_name || '-';
+
+                // Components (clickable → Config tab)
+                document.getElementById('components').innerHTML = Object.entries(status.components).map(([k, v]) =>
+                    `<div class="stat" style="cursor:pointer" onclick="highlightConfig(COMPONENT_CONFIG_KEYS['${esc(k)}'] || [])" title="Click to configure ${esc(k)}"><span class="badge ${v ? 'on' : 'off'}">${v ? 'ON' : 'OFF'}</span> ${esc(k)}</div>`
+                ).join('');
+
+                // Integrations (clickable → Plugins or Data tab)
+                document.getElementById('integrations').innerHTML = status.integrations.map(i => {
+                    const tab = esc(i.tab || 'plugins');
+                    return `<div class="stat" style="justify-content:space-between;cursor:pointer" onclick="switchTab('${tab}')" title="Open in ${tab === 'plugins' ? 'Plugins' : 'Data'} tab">
+                    <span><span class="badge ${i.active ? 'on' : 'off'}">${i.active ? 'ON' : 'OFF'}</span> ${esc(i.label)}</span>
+                    <span style="color:#64748b;font-size:0.7rem">${tab === 'plugins' ? 'Plugins →' : 'Data →'}</span>
+                </div>`;
+                }).join('') || '<div style="color:#64748b">None configured</div>';
+
+                // Callbacks
+                document.getElementById('cb-count').textContent = status.callbacks_pending;
+                document.getElementById('cb-body').innerHTML = callbacks.map(cb =>
+                    `<tr><td>${esc(cb.number)}</td><td>${esc(cb.message).substring(0, 60)}</td><td>${new Date(cb.timestamp * 1000).toLocaleTimeString()}</td></tr>`
+                ).join('') || '<tr><td colspan="3" style="color:#64748b">No pending callbacks</td></tr>';
+
+            } catch (e) { console.error('Refresh error:', e); }
+        }
+
+        async function clearCallbacks() { await fetch('/api/callbacks/clear', { method: 'POST' }); refreshOverview(); }
+        async function sipReregister() {
+            const r = await fetch('/api/system/sip/reregister', { method: 'POST' });
+            const d = await r.json();
+            alert(d.message || d.error);
+        }
+
+        // ==================== Tests ====================
+        async function testTTS() {
+            const text = document.getElementById('tts-text').value;
+            const lang = document.getElementById('tts-lang').value;
+            const box = document.getElementById('tts-result');
+            box.style.display = 'block';
+            box.innerHTML = 'Generating...';
+
+            try {
+                const r = await fetch('/api/test/tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, language: lang }),
+                });
+                const d = await r.json();
+                if (d.success) {
+                    box.innerHTML = `<div>Duration: ${d.duration_ms}ms | Size: ${(d.file_size / 1024).toFixed(1)}KB</div>
+                    <audio controls src="${d.audio_url}" style="width:100%;margin-top:8px"></audio>`;
+                } else {
+                    box.innerHTML = `<span style="color:#ef4444">Error: ${esc(d.error)}</span>`;
+                }
+            } catch (e) { box.innerHTML = `<span style="color:#ef4444">${esc(e)}</span>`; }
+        }
+
+        async function testOllama() {
+            const prompt = document.getElementById('ollama-prompt').value;
+            const box = document.getElementById('ollama-result');
+            box.style.display = 'block';
+            box.innerHTML = 'Thinking...';
+
+            try {
+                const r = await fetch('/api/test/ollama', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt }),
+                });
+                const d = await r.json();
+                if (d.success) {
+                    box.innerHTML = `<div style="color:#94a3b8;font-size:0.75rem">Model: ${esc(d.model)} | ${d.duration_ms}ms</div>
+                    <div style="margin-top:4px">${esc(d.response)}</div>`;
+                } else {
+                    box.innerHTML = `<span style="color:#ef4444">Error: ${esc(d.error)}</span>`;
+                }
+            } catch (e) { box.innerHTML = `<span style="color:#ef4444">${esc(e)}</span>`; }
+        }
+
+        async function makeTestCall() {
+            const number = document.getElementById('call-number').value;
+            const message = document.getElementById('call-message').value;
+            const box = document.getElementById('call-result');
+            box.style.display = 'block';
+
+            if (!number) { box.innerHTML = '<span style="color:#ef4444">Enter a number</span>'; return; }
+
+            try {
+                const r = await fetch('/api/calls/outgoing', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ number, message }),
+                });
+                const d = await r.json();
+                box.innerHTML = d.success
+                    ? `<span style="color:#22c55e">Call initiated to ${esc(d.number)}</span>`
+                    : `<span style="color:#ef4444">${esc(d.error)}</span>`;
+            } catch (e) { box.innerHTML = `<span style="color:#ef4444">${esc(e)}</span>`; }
+        }
+
+        // ==================== Config ====================
+        async function loadConfig() {
+            try {
+                const data = await fetch('/api/config/').then(r => r.json());
+                const tbody = document.getElementById('config-body');
+                tbody.innerHTML = data.map(c => {
+                    if (c.key.toLowerCase() === 'monitoring_servers') {
+                        return `<tr>
+                                <td style="font-family:monospace;font-size:0.8rem;color:#38bdf8">${esc(c.key)}</td>
+                                <td><textarea class="cfg-input" data-key="${esc(c.key)}" rows="4" style="width:250px">${esc(JSON.stringify(JSON.parse(c.value), null, 2))}</textarea></td>
+                                <td>${c.hot_reload ? '<span class="badge on">Hot</span>' : c.needs_restart ? '<span class="badge off">Restart</span>' : ''}</td>
+                                <td><button class="btn-sm" onclick="saveConfig(this.dataset.key)" data-key="${esc(c.key)}">Save</button></td>
+                            </tr>`;
+                    }
+                    if (c.sensitive) {
+                        c.value = '********';
+                    }
+                    return `<tr>
+                        <td style="font-family:monospace;font-size:0.8rem;color:#38bdf8">${esc(c.key)}</td>
+                        <td><input class="cfg-input" data-key="${esc(c.key)}" value="${esc(c.value)}"
+                            ${c.sensitive ? 'type="password"' : ''} style="width:250px"></td>
+                        <td>${c.hot_reload ? '<span class="badge on">Hot</span>' : c.needs_restart ? '<span class="badge off">Restart</span>' : ''}</td>
+                        <td><button class="btn-sm" onclick="saveConfig(this.dataset.key)" data-key="${esc(c.key)}">Save</button></td>
+                    </tr>`;
+                }).join('');
+            } catch (e) { console.error('Config load error:', e); }
+        }
+
+        async function saveConfig(key) {
+            const input = document.querySelector(`input[data-key="${key}"]`);
+            if (!input) return;
+            try {
+                const r = await fetch('/api/config/', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key, value: input.value }),
+                });
+                const d = await r.json();
+                if (d.needs_restart) alert(`Saved. "${key}" requires container restart to take effect.`);
+                else if (d.hot_reloaded) input.style.borderColor = '#22c55e';
+            } catch (e) { alert('Save failed: ' + e); }
+        }
+
+        async function reloadConfig() {
+            await fetch('/api/config/reload', { method: 'POST' });
+            loadConfig();
+            alert('Configuration reloaded');
+        }
+
+        // Built-in integrations (not plugins)
+        // ==================== Models ====================
+        async function loadOllamaModels() {
+            try {
+                const d = await fetch('/api/models/ollama').then(r => r.json());
+                if (d.error) { document.getElementById('ollama-models').innerHTML = `<div style="color:#ef4444">${esc(d.error)}</div>`; return; }
+                document.getElementById('current-ollama').textContent = d.current || '-';
+                document.getElementById('ollama-models').innerHTML = (d.models || []).map(m => {
+                    const isActive = m.name === d.current;
+                    const size = m.size > 0 ? `${(m.size / 1e9).toFixed(1)} GB` : '';
+                    return `<div class="stat" style="justify-content:space-between;align-items:center">
+                    <div>
+                        <span class="stat-value">${esc(m.name)}</span>
+                        ${size ? `<span style="color:#64748b;font-size:0.75rem;margin-left:8px">${size}</span>` : ''}
+                    </div>
+                    <div style="display:flex;gap:4px;align-items:center">
+                        ${isActive ? '<span class="badge on">Active</span>' : `<button class="btn-sm btn-success" onclick="switchOllama(this.dataset.model)" data-model="${esc(m.name)}">Activate</button>`}
+                        ${!isActive ? `<button class="btn-sm btn-danger" onclick="deleteOllamaModel(this.dataset.model)" data-model="${esc(m.name)}">Delete</button>` : ''}
+                    </div>
+                </div>`;
+                }).join('') || '<div style="color:#64748b">No models found. Pull one below.</div>';
+            } catch (e) { console.error(e); }
+        }
+
+        async function switchOllama(model) {
+            await fetch('/api/models/ollama', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
+            loadOllamaModels();
+        }
+
+        async function pullOllamaModel() {
+            const input = document.getElementById('ollama-pull-name');
+            const model = input.value.trim();
+            if (!model) return;
+            const btn = document.getElementById('ollama-pull-btn');
+            const status = document.getElementById('ollama-pull-status');
+            btn.disabled = true;
+            btn.textContent = 'Pulling...';
+            status.innerHTML = '<span style="color:#38bdf8">Downloading model, this may take a while...</span>';
+            try {
+                const r = await fetch('/api/models/ollama/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
+                const d = await r.json();
+                if (d.success) {
+                    status.innerHTML = '<span style="color:#22c55e">Model pulled successfully!</span>';
+                    input.value = '';
+                    loadOllamaModels();
+                } else {
+                    status.innerHTML = `<span style="color:#ef4444">${esc(d.error || 'Pull failed')}</span>`;
+                }
+            } catch (e) {
+                status.innerHTML = `<span style="color:#ef4444">Error: ${esc(e)}</span>`;
+            }
+            btn.disabled = false;
+            btn.textContent = 'Pull';
+        }
+
+        async function deleteOllamaModel(model) {
+            if (!confirm(`Delete model "${model}"? This cannot be undone.`)) return;
+            try {
+                const r = await fetch('/api/models/ollama/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
+                const d = await r.json();
+                if (d.error) alert(d.error);
+                loadOllamaModels();
+            } catch (e) { alert('Delete failed: ' + e); }
+        }
+
+        async function loadTTSVoices() {
+            try {
+                const d = await fetch('/api/models/tts').then(r => r.json());
+                if (d.error) { document.getElementById('tts-voices').innerHTML = `<div style="color:#ef4444">${esc(d.error)}</div>`; return; }
+                const currentMap = d.current || {};
+                document.getElementById('tts-current').innerHTML = Object.entries(currentMap).map(([lang, name]) =>
+                    `<div class="stat" style="background:#0f172a;border-radius:8px;padding:10px">
+                        <span class="stat-label">${lang === 'nl' ? 'Nederlands' : 'English'}</span>
+                        <span class="stat-value" style="color:#38bdf8">${esc(name)}</span>
+                    </div>`
+                ).join('');
+                document.getElementById('tts-voices').innerHTML = '<h4 style="margin:12px 0 6px;color:#94a3b8;font-size:0.85rem">Available Voices</h4>' +
+                    ((d.voices || []).map(v => {
+                        const langLabel = v.locale.startsWith('nl') ? 'NL' : 'EN';
+                        const isActiveNl = currentMap.nl && currentMap.nl === v.file.replace('.onnx', '');
+                        const isActiveEn = currentMap.en && currentMap.en === v.file.replace('.onnx', '');
+                        return `<div class="stat" style="justify-content:space-between;align-items:center">
+                        <div>
+                            <span class="stat-value">${esc(v.voice || v.file)}</span>
+                            <span class="badge info" style="margin-left:6px">${esc(v.locale)}</span>
+                            ${v.quality ? `<span style="color:#64748b;font-size:0.75rem;margin-left:6px">${esc(v.quality)}</span>` : ''}
+                        </div>
+                        <div style="display:flex;gap:4px;align-items:center">
+                            ${isActiveNl ? '<span class="badge on">NL Active</span>' : `<button class="btn-sm" onclick="switchTTS('nl',this.dataset.file)" data-file="${esc(v.file)}">Use for NL</button>`}
+                            ${isActiveEn ? '<span class="badge on">EN Active</span>' : `<button class="btn-sm" onclick="switchTTS('en',this.dataset.file)" data-file="${esc(v.file)}">Use for EN</button>`}
+                        </div>
+                    </div>`;
+                    }).join('') || '<div style="color:#64748b">No voices found in /app/models/piper/</div>');
+            } catch (e) { console.error(e); }
+        }
+
+        async function switchTTS(lang, file) {
+            const r = await fetch('/api/models/tts', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ language: lang, voice_file: file }) });
+            const d = await r.json();
+            if (d.note) alert(d.note);
+            loadTTSVoices();
+        }
+
+        // ==================== Calls ====================
+        async function loadCallHistory() {
+            const days = document.getElementById('calls-days').value;
+            try {
+                const data = await fetch(`/api/calls/history?days=${days}`).then(r => r.json());
+                document.getElementById('calls-body').innerHTML = data.map(c => `
+                <tr onclick="showCallDetail(this.dataset.id)" data-id="${esc(c.id)}" style="cursor:pointer">
+                    <td>${new Date(c.start_time * 1000).toLocaleString()}</td>
+                    <td><span class="badge ${c.direction === 'incoming' ? 'info' : 'on'}">${c.direction}</span></td>
+                    <td>${esc(c.caller_name || c.caller_number)}</td>
+                    <td>${c.duration ? c.duration + 's' : '-'}</td>
+                    <td>${c.transcript ? c.transcript.length + ' entries' : '-'}</td>
+                    <td>${c.recording_path ? '<button class="btn-sm" onclick="event.stopPropagation();playRecording(this.dataset.id)" data-id="' + esc(c.id) + '">Play</button>' : ''}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="6" style="color:#64748b">No calls found</td></tr>';
+            } catch (e) { console.error(e); }
+        }
+
+        async function showCallDetail(id) {
+            try {
+                const c = await fetch(`/api/calls/${id}`).then(r => r.json());
+                _currentCallData = c;
+                document.getElementById('call-detail-card').style.display = 'block';
+                document.getElementById('detail-id').textContent = id;
+                document.getElementById('detail-caller').textContent = (c.caller_name ? c.caller_name + ' ' : '') + c.caller_number;
+                document.getElementById('detail-duration').textContent = c.duration ? c.duration + 's' : '-';
+
+                // Audio player for call recording
+                const playerEl = document.getElementById('detail-player');
+                if (c.recording_path) {
+                    playerEl.innerHTML = `<audio controls style="width:100%;margin-top:8px" src="/api/calls/${esc(id)}/recording"></audio>`;
+                } else {
+                    playerEl.innerHTML = '<div style="color:#64748b;font-size:0.8rem;margin-top:4px">No recording available</div>';
+                }
+
+                // Show download button if transcript exists
+                const dlBtn = document.getElementById('btn-download-transcript');
+                dlBtn.style.display = (c.transcript && c.transcript.length) ? 'inline-block' : 'none';
+
+                document.getElementById('detail-transcript').innerHTML = (c.transcript || []).map(t =>
+                    `<div class="transcript-entry">
+                    <span class="transcript-role ${t.role}">${t.role}</span>
+                    <span style="color:#64748b;font-size:0.7rem;margin-left:8px">${new Date(t.timestamp * 1000).toLocaleTimeString()}</span>
+                    <div class="transcript-text">${esc(t.text)}</div>
+                </div>`
+                ).join('') || '<div style="color:#64748b">No transcript</div>';
+            } catch (e) { console.error(e); }
+        }
+
+        function playRecording(id) {
+            const url = `/api/calls/${id}/recording`;
+            const audio = new Audio(url);
+            audio.play().catch(e => alert('Playback failed: ' + e));
+        }
+
+        // ==================== System ====================
+        async function loadResources() {
+            try {
+                const d = await fetch('/api/system/resources').then(r => r.json());
+
+                document.getElementById('cpu-pct').textContent = d.cpu.percent + '%';
+                setBar('cpu-bar', d.cpu.percent);
+                document.getElementById('cpu-cores').textContent = d.cpu.count;
+
+                document.getElementById('mem-pct').textContent = d.memory.percent + '%';
+                setBar('mem-bar', d.memory.percent);
+                document.getElementById('mem-detail').textContent = `${d.memory.used_gb}GB / ${d.memory.total_gb}GB`;
+
+                document.getElementById('disk-pct').textContent = d.disk.percent + '%';
+                setBar('disk-bar', d.disk.percent);
+                document.getElementById('disk-free').textContent = d.disk.free_gb + 'GB';
+
+                const gpu = d.gpu;
+                if (gpu.name) {
+                    const gpuPct = gpu.utilization_percent;
+                    document.getElementById('gpu-info').innerHTML =
+                        `<div class="stat"><span class="stat-label">GPU</span><span class="stat-value">${esc(gpu.name)}</span></div>
+                     <div class="stat"><span class="stat-label">Usage</span><span class="stat-value">${gpuPct}%</span></div>
+                     <div class="progress-bar"><div class="progress-fill ${barColor(gpuPct)}" style="width:${gpuPct}%"></div></div>
+                     <div class="stat"><span class="stat-label">VRAM</span><span class="stat-value">${gpu.memory_used_mb}MB / ${gpu.memory_total_mb}MB</span></div>
+                     <div class="stat"><span class="stat-label">Temp</span><span class="stat-value">${gpu.temperature_c}C</span></div>`;
+                } else {
+                    document.getElementById('gpu-info').innerHTML = '<div style="color:#64748b">No GPU detected</div>';
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        async function loadCache() {
+            try {
+                const d = await fetch('/api/system/cache').then(r => r.json());
+                document.getElementById('cache-info').innerHTML =
+                    `<div class="stat"><span class="stat-label">Cache</span><span class="stat-value">${d.cache.files} files (${d.cache.size_mb}MB)</span></div>
+                 <div class="stat"><span class="stat-label">Tmp</span><span class="stat-value">${d.tmp.files} files (${d.tmp.size_mb}MB)</span></div>`;
+            } catch (e) { console.error(e); }
+        }
+
+        async function clearCache() {
+            await fetch('/api/system/cache/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cache: true, tmp: false }) });
+            loadCache();
+        }
+        async function clearTmp() {
+            await fetch('/api/system/cache/clear', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cache: false, tmp: true }) });
+            loadCache();
+        }
+
+        async function loadLogs() {
+            const search = document.getElementById('log-search').value;
+            try {
+                const d = await fetch(`/api/system/logs?lines=200&search=${encodeURIComponent(search)}`).then(r => r.json());
+                const viewer = document.getElementById('log-viewer');
+                viewer.innerHTML = d.lines.map(l => {
+                    let cls = 'log-info';
+                    if (l.includes('ERROR')) cls = 'log-error';
+                    else if (l.includes('WARNING')) cls = 'log-warn';
+                    return `<div class="${cls}">${esc(l)}</div>`;
+                }).join('');
+                viewer.scrollTop = viewer.scrollHeight;
+            } catch (e) { console.error(e); }
+        }
+
+        // Live logs via SocketIO
+        let socket = null;
+        let liveLogsActive = false;
+
+        function toggleLiveLogs() {
+            if (liveLogsActive) {
+                if (socket) socket.emit('leave_logs');
+                liveLogsActive = false;
+                document.getElementById('live-log-btn').textContent = 'Live';
+                document.getElementById('live-log-btn').classList.remove('btn-success');
+            } else {
+                if (!socket) {
+                    socket = io();
+                    socket.on('log_line', data => {
+                        if (!liveLogsActive) return;
+                        const viewer = document.getElementById('log-viewer');
+                        const div = document.createElement('div');
+                        let cls = 'log-info';
+                        if (data.line.includes('ERROR')) cls = 'log-error';
+                        else if (data.line.includes('WARNING')) cls = 'log-warn';
+                        div.className = cls;
+                        div.textContent = data.line;
+                        viewer.appendChild(div);
+                        // Keep max 500 lines
+                        while (viewer.children.length > 500) viewer.removeChild(viewer.firstChild);
+                        viewer.scrollTop = viewer.scrollHeight;
+                    });
+                }
+                socket.emit('join_logs');
+                liveLogsActive = true;
+                document.getElementById('live-log-btn').textContent = 'Stop';
+                document.getElementById('live-log-btn').classList.add('btn-success');
+            }
+        }
+
+        // ==================== Helpers ====================
+        function esc(s) { if (!s && s !== 0) return ''; const d = document.createElement('div'); d.textContent = String(s); return d.innerHTML.replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+        function setBar(id, pct) {
+            const el = document.getElementById(id);
+            el.style.width = pct + '%';
+            el.className = 'progress-fill ' + barColor(pct);
+        }
+        function barColor(pct) { return pct > 90 ? 'red' : pct > 70 ? 'yellow' : 'green'; }
+
+        // ==================== Tab Switching ====================
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            const tab = document.querySelector(`.tab[data-tab="${tabName}"]`);
+            if (tab) {
+                tab.classList.add('active');
+                document.getElementById('panel-' + tabName).classList.add('active');
+                if (tabName === 'config') loadConfig();
+                if (tabName === 'plugins') loadPlugins();
+                if (tabName === 'models') { loadOllamaModels(); loadTTSVoices(); }
+                if (tabName === 'calls') loadCallHistory();
+                if (tabName === 'data') { loadNotes(); loadEvents(); loadMediaStatus(); }
+                if (tabName === 'system') { loadResources(); loadCache(); loadLogs(); }
+            }
+        }
+
+        function highlightConfig(keys) {
+            switchTab('config');
+            setTimeout(() => {
+                const rows = document.querySelectorAll('#config-body tr');
+                rows.forEach(row => row.style.background = '');
+                keys.forEach(key => {
+                    const input = document.querySelector(`#config-body .cfg-input[data-key="${key}"]`);
+                    if (input) {
+                        const row = input.closest('tr');
+                        row.style.background = 'rgba(56,189,248,0.15)';
+                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                });
+            }, 200);
+        }
+
+        // Component name → config key mapping
+        const COMPONENT_CONFIG_KEYS = {
+            tts: ['TTS_VOICE_NL', 'TTS_VOICE_EN', 'TTS_SAMPLE_RATE'],
+            stt: ['STT_MODEL', 'STT_DEVICE'],
+            vad: ['STT_MODEL'],
+            ollama: ['OLLAMA_BASE_URL', 'OLLAMA_MODEL', 'OLLAMA_TEMPERATURE'],
+            router: ['OLLAMA_MODEL'],
+        };
+
+        // ==================== Plugins ====================
+        async function loadPlugins() {
+            try {
+                const plugins = await fetch('/api/plugins/').then(r => r.json());
+                const el = document.getElementById('plugins-list');
+                if (!plugins.length) {
+                    el.innerHTML = '<div style="color:#64748b;padding:12px">No plugins installed. Place plugin files in src/plugins/ to get started.</div>';
+                    return;
+                }
+                el.innerHTML = plugins.map(p => {
+                    const statusBadge = p.enabled
+                        ? '<span class="badge on">Active</span>'
+                        : (p.configured === false ? '<span class="badge" style="background:#92400e;color:#fde68a">Unconfigured</span>' : '<span class="badge off">Inactive</span>');
+
+                    // Config fields
+                    let configHtml = '';
+                    if (p.config_fields && p.config_fields.length) {
+                        configHtml = '<div style="margin-top:10px;border-top:1px solid #334155;padding-top:10px">';
+                        p.config_fields.forEach(f => {
+                            const val = f.current_value || '';
+                            if (f.field_type === 'toggle') {
+                                const checked = val === 'true' || val === '1' || val === 'True';
+                                configHtml += `<div class="wizard-field" style="display:flex;align-items:center;gap:8px">
+                                    <label style="margin:0">${esc(f.label)}</label>
+                                    <input type="checkbox" data-plugin-key="${esc(f.key)}" ${checked ? 'checked' : ''}
+                                        onchange="savePluginField('${esc(f.key)}', this.checked ? 'true' : 'false')">
+                                </div>`;
+                            } else if (f.field_type === 'textarea') {
+                                configHtml += `<div class="wizard-field"><label>${esc(f.label)}</label>
+                                    <textarea data-plugin-key="${esc(f.key)}" rows="3" placeholder="${esc(f.placeholder || '')}"
+                                        style="width:100%;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px">${esc(val)}</textarea>
+                                    <button class="btn-sm" onclick="savePluginField('${esc(f.key)}')" style="margin-top:4px">Save</button></div>`;
+                            } else if (f.field_type === 'select' && f.options) {
+                                configHtml += `<div class="wizard-field"><label>${esc(f.label)}</label>
+                                    <div style="display:flex;gap:4px">
+                                        <select data-plugin-key="${esc(f.key)}" style="flex:1;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px">
+                                            ${f.options.map(o => `<option value="${esc(o)}" ${val === o ? 'selected' : ''}>${esc(o)}</option>`).join('')}
+                                        </select>
+                                        <button class="btn-sm" onclick="savePluginField('${esc(f.key)}')">Save</button>
+                                    </div></div>`;
+                            } else {
+                                configHtml += `<div class="wizard-field"><label>${esc(f.label)}</label>
+                                    <div style="display:flex;gap:4px">
+                                        <input data-plugin-key="${esc(f.key)}" value="${f.sensitive ? '' : esc(val)}" placeholder="${esc(f.placeholder || '')}"
+                                            type="${f.sensitive || f.field_type === 'password' ? 'password' : 'text'}"
+                                            style="flex:1;background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:8px">
+                                        <button class="btn-sm" onclick="savePluginField('${esc(f.key)}')">Save</button>
+                                    </div></div>`;
+                            }
+                        });
+                        configHtml += '</div>';
+                    }
+
+                    return `<div style="border:1px solid #334155;border-radius:8px;padding:14px;margin-bottom:10px">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <div>
+                                <strong style="font-size:1rem">${esc(p.display_name)}</strong>
+                                <span style="color:#64748b;font-size:0.75rem;margin-left:8px">v${esc(p.version)}</span>
+                                ${p.author ? `<span style="color:#64748b;font-size:0.75rem;margin-left:4px">by ${esc(p.author)}</span>` : ''}
+                            </div>
+                            <div style="display:flex;align-items:center;gap:8px">
+                                ${statusBadge}
+                                <button class="btn-sm ${p.enabled ? 'btn-danger' : 'btn-success'}" onclick="togglePlugin('${esc(p.name)}', ${!p.enabled})">
+                                    ${p.enabled ? 'Disable' : 'Enable'}
+                                </button>
+                                <button class="btn-sm" onclick="testPlugin('${esc(p.name)}')">Test</button>
+                                <button class="btn-sm btn-danger" onclick="uninstallPlugin('${esc(p.name)}', '${esc(p.display_name)}')" title="Uninstall">&times;</button>
+                            </div>
+                        </div>
+                        ${p.description ? `<div style="color:#94a3b8;font-size:0.85rem;margin-top:6px">${esc(p.description)}</div>` : ''}
+                        ${configHtml}
+                    </div>`;
+                }).join('');
+            } catch (e) {
+                document.getElementById('plugins-list').innerHTML = `<div style="color:#ef4444">Failed to load plugins: ${esc(e)}</div>`;
+                console.error('Plugins load error:', e);
+            }
+        }
+
+        async function togglePlugin(name, enable) {
+            try {
+                const action = enable ? 'enable' : 'disable';
+                const r = await fetch(`/api/plugins/${name}/${action}`, { method: 'POST' });
+                const d = await r.json();
+                if (d.error) alert(d.error);
+                loadPlugins();
+            } catch (e) { alert('Failed: ' + e); }
+        }
+
+        async function testPlugin(name) {
+            try {
+                const r = await fetch(`/api/plugins/${name}/test`, { method: 'POST' });
+                const d = await r.json();
+                if (d.success) {
+                    alert(`${name}: Connection OK`);
+                } else {
+                    alert(`${name}: Connection FAILED` + (d.error ? '\n' + d.error : ''));
+                }
+            } catch (e) { alert('Test failed: ' + e); }
+        }
+
+        async function installPluginFromGithub() {
+            const input = document.getElementById('plugin-github-url');
+            const url = input.value.trim();
+            if (!url) return;
+            const btn = document.getElementById('plugin-install-btn');
+            const status = document.getElementById('plugin-install-status');
+            btn.disabled = true;
+            btn.textContent = 'Installing...';
+            status.innerHTML = '<span style="color:#38bdf8">Downloading and installing plugin...</span>';
+            try {
+                const r = await fetch('/api/plugins/install', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+                const d = await r.json();
+                if (d.success) {
+                    status.innerHTML = `<span style="color:#22c55e">Installed: ${esc(d.installed.join(', '))} from ${esc(d.source)}</span>`;
+                    input.value = '';
+                    loadPlugins();
+                } else {
+                    status.innerHTML = `<span style="color:#ef4444">${esc(d.error || 'Install failed')}</span>`;
+                }
+            } catch (e) {
+                status.innerHTML = `<span style="color:#ef4444">Error: ${esc(e)}</span>`;
+            }
+            btn.disabled = false;
+            btn.textContent = 'Install';
+        }
+
+        async function uninstallPlugin(name, displayName) {
+            if (!confirm(`Uninstall plugin "${displayName}"? This will remove the plugin file.`)) return;
+            try {
+                const r = await fetch(`/api/plugins/${name}/uninstall`, { method: 'POST' });
+                const d = await r.json();
+                if (d.error) alert(d.error);
+                loadPlugins();
+            } catch (e) { alert('Uninstall failed: ' + e); }
+        }
+
+        async function savePluginField(key, directValue) {
+            const el = document.querySelector(`[data-plugin-key="${key}"]`);
+            const value = directValue !== undefined ? directValue : (el ? el.value.trim() : '');
+            try {
+                const r = await fetch('/api/config/', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key, value }),
+                });
+                const d = await r.json();
+                if (d.needs_restart) alert(`"${key}" requires container restart.`);
+                else if (el) el.style.borderColor = '#22c55e';
+            } catch (e) { alert('Save failed: ' + e); }
+        }
+
+        // ==================== Data: Notes & Calendar ====================
+        async function loadNotes() {
+            try {
+                const notes = await fetch('/api/data/notes?all=true').then(r => r.json());
+                const el = document.getElementById('notes-list');
+                if (notes.error) { el.innerHTML = `<div style="color:#ef4444">${esc(notes.error)}</div>`; return; }
+                el.innerHTML = notes.map(n => `
+                    <div class="stat" style="justify-content:space-between;opacity:${n.completed ? '0.5' : '1'}">
+                        <span style="${n.completed ? 'text-decoration:line-through' : ''}">${esc(n.content)}</span>
+                        <span>
+                            <span style="color:#64748b;font-size:0.7rem;margin-right:8px">${n.created_at}</span>
+                            ${!n.completed ? `<button class="btn-sm" onclick="completeNote(${n.id})" title="Complete">&#10003;</button>` : ''}
+                            <button class="btn-sm btn-danger" onclick="deleteNote(${n.id})" title="Delete" style="margin-left:2px">&times;</button>
+                        </span>
+                    </div>
+                `).join('') || '<div style="color:#64748b">No notes yet</div>';
+            } catch (e) { console.error('Notes load error:', e); }
+        }
+
+        async function addNote() {
+            const input = document.getElementById('note-input');
+            const content = input.value.trim();
+            if (!content) return;
+            await fetch('/api/data/notes', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content }),
+            });
+            input.value = '';
+            loadNotes();
+        }
+
+        async function deleteNote(id) {
+            await fetch(`/api/data/notes/${id}`, { method: 'DELETE' });
+            loadNotes();
+        }
+
+        async function completeNote(id) {
+            await fetch(`/api/data/notes/${id}/complete`, { method: 'POST' });
+            loadNotes();
+        }
+
+        async function loadEvents() {
+            try {
+                const events = await fetch('/api/data/events').then(r => r.json());
+                const el = document.getElementById('events-list');
+                if (events.error) { el.innerHTML = `<div style="color:#ef4444">${esc(events.error)}</div>`; return; }
+                el.innerHTML = events.map(e => `
+                    <div class="stat" style="justify-content:space-between">
+                        <span>
+                            <span class="badge info">${esc(e.event_date)}</span>
+                            ${e.event_time ? `<span style="color:#64748b;font-size:0.8rem;margin-left:4px">${esc(e.event_time)}</span>` : ''}
+                            <strong style="margin-left:8px">${esc(e.title)}</strong>
+                            ${e.description ? `<span style="color:#94a3b8;margin-left:8px">${esc(e.description)}</span>` : ''}
+                        </span>
+                        <button class="btn-sm btn-danger" onclick="deleteEvent(${e.id})" title="Delete">&times;</button>
+                    </div>
+                `).join('') || '<div style="color:#64748b">No upcoming events</div>';
+            } catch (e) { console.error('Events load error:', e); }
+        }
+
+        async function addEvent() {
+            const title = document.getElementById('event-title').value.trim();
+            const date = document.getElementById('event-date').value;
+            const time = document.getElementById('event-time').value;
+            const description = document.getElementById('event-desc').value.trim();
+            if (!title || !date) { alert('Title and date are required'); return; }
+            await fetch('/api/data/events', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title, date, time: time || null, description: description || null }),
+            });
+            document.getElementById('event-title').value = '';
+            document.getElementById('event-date').value = '';
+            document.getElementById('event-time').value = '';
+            document.getElementById('event-desc').value = '';
+            loadEvents();
+        }
+
+        async function deleteEvent(id) {
+            await fetch(`/api/data/events/${id}`, { method: 'DELETE' });
+            loadEvents();
+        }
+
+        // ==================== Media Controls ====================
+        async function loadMediaStatus() {
+            try {
+                const d = await fetch('/api/data/media/status').then(r => r.json());
+                const statusEl = document.getElementById('media-status');
+                const controlsEl = document.getElementById('media-controls');
+                if (d.available) {
+                    statusEl.innerHTML = `<div class="stat"><span class="badge on">Connected</span> Player: <strong>${esc(d.player || 'detecting...')}</strong></div>`;
+                    controlsEl.style.display = 'block';
+                } else {
+                    statusEl.innerHTML = `<div class="stat"><span class="badge off">Unavailable</span> <span style="color:#94a3b8">${esc(d.reason || 'Not configured')}</span></div>`;
+                    controlsEl.style.display = 'none';
+                }
+            } catch (e) {
+                document.getElementById('media-status').innerHTML = '<div style="color:#64748b">Could not check media status</div>';
+            }
+        }
+
+        async function mediaCommand(cmd) {
+            try {
+                const r = await fetch('/api/data/media/command', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ command: cmd }) });
+                const d = await r.json();
+                if (d.error) alert(d.error);
+            } catch (e) { alert('Media command failed: ' + e); }
+        }
+
+        // ==================== Transcript Download ====================
+        let _currentCallData = null;
+
+        function downloadTranscript() {
+            if (!_currentCallData) return;
+            const c = _currentCallData;
+            const date = new Date(c.start_time * 1000).toLocaleString();
+            const dur = c.duration ? c.duration + 's' : 'unknown';
+            let md = `# Call Transcript: ${c.id}\n`;
+            md += `**Date:** ${date} | **Caller:** ${c.caller_name || 'Unknown'} (${c.caller_number || '-'}) | **Duration:** ${dur}\n\n`;
+            md += `---\n\n`;
+            (c.transcript || []).forEach(t => {
+                const time = new Date(t.timestamp * 1000).toLocaleTimeString();
+                const role = t.role.charAt(0).toUpperCase() + t.role.slice(1);
+                md += `**[${time}] ${role}:**\n${t.text}\n\n`;
+            });
+            const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `transcript_${c.id}.md`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // ==================== Setup Wizard ====================
+        const WIZARD_STEPS = [
+            {
+                title: 'SIP Configuration',
+                fields: [
+                    { key: 'SIP_SERVER', label: 'SIP Server', placeholder: 'sip.example.com' },
+                    { key: 'SIP_LOCAL_PORT', label: 'Local Port', placeholder: '5061' },
+                    { key: 'SIP_USERNAME', label: 'Username', placeholder: 'extension number' },
+                    { key: 'SIP_PASSWORD', label: 'Password', placeholder: 'password', type: 'password' },
+                    { key: 'SIP_TRANSPORT', label: 'Transport', placeholder: 'UDP', options: ['UDP', 'TCP', 'TLS'] },
+                ]
+            },
+            {
+                title: 'AI / Ollama',
+                fields: [
+                    { key: 'OLLAMA_BASE_URL', label: 'Ollama URL', placeholder: 'http://host.docker.internal:11434' },
+                    { key: 'OLLAMA_MODEL', label: 'Model', placeholder: 'llama3:latest' },
+                    { key: 'OLLAMA_TEMPERATURE', label: 'Temperature', placeholder: '0.5' },
+                ]
+            },
+            {
+                title: 'Speech-to-Text',
+                fields: [
+                    { key: 'STT_MODEL_SIZE', label: 'Model Size', placeholder: 'small', options: ['tiny', 'base', 'small', 'medium', 'large-v3'] },
+                    { key: 'STT_DEVICE', label: 'Device', placeholder: 'cuda', options: ['cuda', 'cpu'] },
+                ]
+            },
+            {
+                title: 'Text-to-Speech',
+                fields: [
+                    { key: 'TTS_VOICE_NL', label: 'Dutch Voice File', placeholder: '/app/voices/nl_voice.onnx' },
+                    { key: 'TTS_VOICE_EN', label: 'English Voice File', placeholder: '/app/voices/en_voice.onnx' },
+                    { key: 'ASSISTANT_NAME', label: 'Assistant Name', placeholder: 'ClaudeViool' },
+                ]
+            },
+            {
+                title: 'Summary',
+                summary: true,
+            }
+        ];
+
+        let wizardStep = 0;
+        let wizardData = {};
+
+        function renderWizardSteps() {
+            const el = document.getElementById('wizard-steps');
+            el.innerHTML = WIZARD_STEPS.map((s, i) =>
+                `<div class="wizard-step ${i < wizardStep ? 'done' : i === wizardStep ? 'active' : ''}"></div>`
+            ).join('');
+        }
+
+        function renderWizardContent() {
+            const step = WIZARD_STEPS[wizardStep];
+            const el = document.getElementById('wizard-content');
+
+            if (step.summary) {
+                let html = `<h3>${step.title}</h3><p style="color:#94a3b8;margin-bottom:12px">Review your settings:</p>`;
+                const entries = Object.entries(wizardData).filter(([k, v]) => v);
+                html += entries.map(([k, v]) => {
+                    const display = k.includes('PASSWORD') || k.includes('TOKEN') ? '***' : v;
+                    return `<div class="stat"><span class="stat-label" style="font-family:monospace;font-size:0.8rem">${esc(k)}</span><span class="stat-value">${esc(display)}</span></div>`;
+                }).join('');
+                if (!entries.length) html += '<div style="color:#64748b">No settings configured. You can configure them later in the Config tab.</div>';
+                el.innerHTML = html;
+            } else {
+                let html = `<h3>${step.title}</h3>`;
+                step.fields.forEach(f => {
+                    const val = wizardData[f.key] || '';
+                    if (f.options) {
+                        html += `<div class="wizard-field"><label>${f.label}</label>
+                            <select data-wiz-key="${f.key}">
+                                <option value="">-- Select --</option>
+                                ${f.options.map(o => `<option value="${o}" ${val === o ? 'selected' : ''}>${o}</option>`).join('')}
+                            </select></div>`;
+                    } else {
+                        html += `<div class="wizard-field"><label>${f.label}</label>
+                            <input data-wiz-key="${f.key}" value="${esc(val)}" placeholder="${f.placeholder || ''}" type="${f.type || 'text'}"></div>`;
+                    }
+                });
+                el.innerHTML = html;
+            }
+
+            document.getElementById('wizard-back').style.visibility = wizardStep > 0 ? 'visible' : 'hidden';
+            document.getElementById('wizard-next').textContent = wizardStep === WIZARD_STEPS.length - 1 ? 'Finish Setup' : 'Next';
+            renderWizardSteps();
+        }
+
+        function saveWizardFields() {
+            document.querySelectorAll('[data-wiz-key]').forEach(el => {
+                wizardData[el.dataset.wizKey] = el.value.trim();
+            });
+        }
+
+        function wizardNext() {
+            saveWizardFields();
+            if (wizardStep < WIZARD_STEPS.length - 1) {
+                wizardStep++;
+                renderWizardContent();
+            } else {
+                finishSetup();
+            }
+        }
+
+        function wizardBack() {
+            saveWizardFields();
+            if (wizardStep > 0) {
+                wizardStep--;
+                renderWizardContent();
+            }
+        }
+
+        async function finishSetup() {
+            const btn = document.getElementById('wizard-next');
+            btn.textContent = 'Saving...';
+            btn.disabled = true;
+            try {
+                await fetch('/api/setup/complete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ config: wizardData }),
+                });
+                document.getElementById('setup-wizard').style.display = 'none';
+            } catch (e) {
+                alert('Setup failed: ' + e);
+            }
+            btn.textContent = 'Done';
+            btn.disabled = false;
+        }
+
+        async function checkSetup() {
+            try {
+                const r = await fetch('/api/setup/status').then(r => r.json());
+                if (!r.setup_complete) {
+                    document.getElementById('setup-wizard').style.display = 'flex';
+                    renderWizardContent();
+                }
+            } catch (e) { console.log('Setup check skipped'); }
+        }
+
+        // ==================== Auto-refresh ====================
+        checkSetup();
+        refreshOverview();
+        setInterval(refreshOverview, 5000);
+    </script>
+</body>
+
+</html>

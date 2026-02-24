@@ -1,0 +1,39 @@
+services:
+  voice-agent:
+    build: .
+    container_name: ClaudePhone
+    restart: unless-stopped
+
+    env_file: .env
+
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    ports:
+      - "5061:5061/udp"              # SIP
+      - "4000-4019:4000-4019/udp"    # RTP
+      - "8080:8080/tcp"              # Dashboard
+
+    volumes:
+      - ./logs:/app/logs
+      - ./audio:/app/audio
+      - ./data:/app/data
+      - ./.env:/app/.env
+      - hf_cache:/app/models/hf_cache  # Whisper model cache
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  hf_cache:
