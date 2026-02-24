@@ -241,20 +241,27 @@ def install_plugin():
             installed = []
             validation_errors = []
 
+            # Check if root itself is a plugin package (has __init__.py)
+            if (root / "__init__.py").exists():
+                names, errors = _install_from_dir(root, pm)
+                installed.extend(names)
+                validation_errors.extend(errors)
+
             # Check root for plugin package directories or .py files
-            for f in root.iterdir():
-                if f.is_dir() and (f / "__init__.py").exists() and not f.name.startswith("_"):
-                    names, errors = _install_from_dir(f, pm)
-                    installed.extend(names)
-                    validation_errors.extend(errors)
-                    if installed or errors:
-                        break
-                elif f.is_file() and f.suffix == ".py" and not f.name.startswith("_"):
-                    names, errors = _install_from_file(f, pm)
-                    installed.extend(names)
-                    validation_errors.extend(errors)
-                    if installed or errors:
-                        break
+            if not installed and not validation_errors:
+                for f in root.iterdir():
+                    if f.is_dir() and (f / "__init__.py").exists() and not f.name.startswith("_"):
+                        names, errors = _install_from_dir(f, pm)
+                        installed.extend(names)
+                        validation_errors.extend(errors)
+                        if installed or errors:
+                            break
+                    elif f.is_file() and f.suffix == ".py" and not f.name.startswith("_"):
+                        names, errors = _install_from_file(f, pm)
+                        installed.extend(names)
+                        validation_errors.extend(errors)
+                        if installed or errors:
+                            break
 
             # Fallback: check src/plugins/ in repo
             if not installed and not validation_errors:
