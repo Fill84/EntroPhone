@@ -197,6 +197,21 @@ class PluginBase(ABC):
         """
         return None
 
+    def handle_api_action(self, action: str, data: dict) -> dict:
+        """Handle a plugin-specific API action.
+
+        Called via ``POST /api/plugins/<name>/action/<action>``.
+        Override this to add custom API endpoints without needing a Blueprint.
+
+        Args:
+            action: The action path (e.g. "servers/list", "servers/0/test").
+            data: The JSON request body (empty dict if no body).
+
+        Returns:
+            A JSON-serializable dict with the response.
+        """
+        return {"error": "Action not supported"}
+
     # --- Helpers ---
 
     def _msg(self, en: str, nl: str, language: str) -> str:

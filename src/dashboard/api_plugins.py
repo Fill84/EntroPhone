@@ -489,6 +489,31 @@ def plugin_page_render(name, page_id):
         return jsonify({"error": str(e)}), 500
 
 
+@plugins_bp.route("/<name>/action/<path:action>", methods=["GET", "POST"])
+def plugin_action(name, action):
+    """Generic plugin action endpoint.
+
+    Delegates to ``plugin.handle_api_action(action, data)`` so plugins
+    can expose custom API endpoints without needing a separate Blueprint.
+    """
+    pm = _get_pm()
+    if not pm:
+        return jsonify({"error": "Plugin manager not available"}), 503
+
+    plugin = pm.plugins.get(name)
+    if not plugin:
+        return jsonify({"error": "Plugin not found"}), 404
+
+    data = request.json if request.is_json else {}
+    try:
+        result = plugin.handle_api_action(action, data)
+        return jsonify(result)
+    except Exception as e:
+        logger.error("Plugin action %s/%s failed: %s", name, action, e,
+                     exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 def _refresh_router(pm):
     """Re-register all plugin keywords in the router after enable/disable."""
     # Register any new plugin routes (e.g. after enabling a plugin)
