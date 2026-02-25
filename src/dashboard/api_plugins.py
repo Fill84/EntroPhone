@@ -84,6 +84,9 @@ def list_plugins():
     if not pm:
         return jsonify([])
 
+    from .app import get_db
+    db = get_db()
+
     result = []
     for name, plugin in pm.plugins.items():
         meta = plugin.meta
@@ -110,6 +113,7 @@ def list_plugins():
                 "icon": page.icon,
                 "type": page.type,
             })
+        source = db.get_setting(f"plugin_source_{meta.name}") if db else None
         result.append({
             "name": meta.name,
             "display_name": meta.display_name,
@@ -120,6 +124,7 @@ def list_plugins():
             "configured": pm._check_configured(plugin),
             "config_fields": fields,
             "pages": pages,
+            "source": source,
         })
     return jsonify(result)
 
@@ -241,6 +246,75 @@ def _install_from_file(source_file: Path, pm) -> tuple:
     return [], ["Plugin failed to load after validation"]
 
 
+def _is_newer_version(remote: str, local: str) -> bool:
+    """Return True if remote version is newer than local version."""
+    try:
+        def parse(v):
+            return tuple(int(x) for x in v.strip().split("."))
+        return parse(remote) > parse(local)
+    except (ValueError, AttributeError):
+        return remote != local
+
+
+def _fetch_remote_version(owner: str, repo: str) -> str | None:
+    """Fetch the version string from a plugin's GitHub repository.
+
+    Uses GitHub's API to list files, then reads raw Python files to extract
+    the version from PluginMeta definitions.
+    """
+    version_patterns = [
+        re.compile(
+            r'PluginMeta\s*\([^)]*version\s*=\s*["\']([^"\']+)["\']',
+            re.DOTALL,
+        ),
+        re.compile(r'version\s*=\s*["\'](\d+\.\d+(?:\.\d+)?)["\']'),
+    ]
+
+    def _extract_version(text: str) -> str | None:
+        for pattern in version_patterns:
+            m = pattern.search(text)
+            if m:
+                return m.group(1)
+        return None
+
+    for branch in ("main", "master"):
+        try:
+            tree_url = (
+                f"https://api.github.com/repos/{owner}/{repo}"
+                f"/git/trees/{branch}?recursive=1"
+            )
+            resp = requests.get(tree_url, timeout=10)
+            if resp.status_code != 200:
+                continue
+
+            tree = resp.json().get("tree", [])
+            py_files = [
+                item["path"] for item in tree
+                if item["path"].endswith(".py")
+                and item["type"] == "blob"
+                and not item["path"].startswith("test")
+                and "__pycache__" not in item["path"]
+            ]
+
+            for py_path in py_files[:10]:
+                raw_url = (
+                    f"https://raw.githubusercontent.com"
+                    f"/{owner}/{repo}/{branch}/{py_path}"
+                )
+                file_resp = requests.get(raw_url, timeout=10)
+                if file_resp.status_code != 200:
+                    continue
+
+                version = _extract_version(file_resp.text)
+                if version:
+                    return version
+
+        except requests.RequestException:
+            continue
+
+    return None
+
+
 @plugins_bp.route("/install", methods=["POST"])
 def install_plugin():
     """Install a plugin from a GitHub repository URL.
@@ -340,6 +414,15 @@ def install_plugin():
             if not installed:
                 return jsonify({"error": "No valid plugin found in repository"}), 400
 
+            # Persist GitHub source for update checking
+            from .app import get_db
+            db = get_db()
+            if db:
+                for plugin_name in installed:
+                    db.set_setting(
+                        f"plugin_source_{plugin_name}", f"{owner}/{repo}"
+                    )
+
             return jsonify({
                 "success": True,
                 "installed": installed,
@@ -371,6 +454,12 @@ def uninstall_plugin(name):
     pm.remove_plugin(name)
     _refresh_router(pm)
 
+    # Clean up stored source URL
+    from .app import get_db
+    db = get_db()
+    if db:
+        db.delete_setting(f"plugin_source_{name}")
+
     # Delete the plugin directory
     deleted_file = False
     if plugin_path and plugin_path.is_dir():
@@ -378,6 +467,86 @@ def uninstall_plugin(name):
         deleted_file = True
 
     return jsonify({"success": True, "file_deleted": deleted_file})
+
+
+@plugins_bp.route("/updates")
+def check_plugin_updates():
+    """Check all installed plugins for available updates."""
+    pm = _get_pm()
+    if not pm:
+        return jsonify({"error": "Plugin manager not available"}), 503
+
+    from .app import get_db
+    db = get_db()
+
+    results = []
+    for name, plugin in pm.plugins.items():
+        source = db.get_setting(f"plugin_source_{name}") if db else None
+        if not source:
+            results.append({
+                "name": name,
+                "display_name": plugin.meta.display_name,
+                "current_version": plugin.meta.version,
+                "remote_version": None,
+                "update_available": False,
+                "source": None,
+                "status": "no_source",
+            })
+            continue
+
+        parts = source.split("/", 1)
+        if len(parts) != 2:
+            results.append({
+                "name": name,
+                "display_name": plugin.meta.display_name,
+                "current_version": plugin.meta.version,
+                "remote_version": None,
+                "update_available": False,
+                "source": source,
+                "status": "error",
+                "error": "Invalid source format",
+            })
+            continue
+
+        owner, repo = parts
+        try:
+            remote_version = _fetch_remote_version(owner, repo)
+            if remote_version is None:
+                results.append({
+                    "name": name,
+                    "display_name": plugin.meta.display_name,
+                    "current_version": plugin.meta.version,
+                    "remote_version": None,
+                    "update_available": False,
+                    "source": source,
+                    "status": "fetch_failed",
+                })
+            else:
+                results.append({
+                    "name": name,
+                    "display_name": plugin.meta.display_name,
+                    "current_version": plugin.meta.version,
+                    "remote_version": remote_version,
+                    "update_available": _is_newer_version(
+                        remote_version, plugin.meta.version
+                    ),
+                    "source": source,
+                    "status": "ok",
+                })
+        except Exception as e:
+            logger.error("Update check failed for %s: %s", name, e)
+            results.append({
+                "name": name,
+                "display_name": plugin.meta.display_name,
+                "current_version": plugin.meta.version,
+                "remote_version": None,
+                "update_available": False,
+                "source": source,
+                "status": "error",
+                "error": str(e),
+            })
+
+    return jsonify(results)
 
 
 @plugins_bp.route("/widgets")
